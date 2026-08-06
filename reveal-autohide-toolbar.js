@@ -50,6 +50,9 @@
  *                           owns the bottom-left corner
  *   toggleKey     string    annotation toggle key        (default 'a'; change it
  *                           on autoSlide decks — reveal core uses A for pause)
+ *   palmRejection boolean   once a stylus (pointerType 'pen') is used, bare
+ *                           touches no longer draw — rest your palm freely
+ *                           (default true; finger drawing works until then)
  *
  * Theming (CSS custom properties, set them on :root in the host deck):
  *   --aht-accent    active-tool highlight            (default #E31937)
@@ -85,6 +88,7 @@
     tools: ['prev', 'next', 'sep', 'overview', 'speaker', 'fullscreen', 'sep', 'annotate', 'slideno'],
     position: 'bottom-left',
     toggleKey: 'a',
+    palmRejection: true,   // once a stylus is used, bare-touch input no longer draws
   };
 
   // ---------- shared icon path data (lucide) ----------
@@ -163,6 +167,13 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 #aht-bar .aht-w.active { background: rgba(255,255,255,.2); }
 #aht-bar .aht-w.active span { background: #fff; }
 
+/* while annotating, nothing on the page may be text-selected — prevents iOS
+   long-press selection callouts (Copy | Find Selection) under the palm */
+body.aht-noselect, body.aht-noselect * {
+  -webkit-user-select: none !important; user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+
 @media print { #aht-canvas, #aht-toolbar, #aht-bar { display: none !important; } }
 `;
 
@@ -170,7 +181,7 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
   let cfg;
   const state = {
     Reveal: null, on: false, overview: false, tool: 'pen', color: null, width: 0,
-    board: false, strokes: {}, undo: {}, drawing: false, cur: null,
+    board: false, strokes: {}, undo: {}, drawing: false, cur: null, pid: null,
   };
   let canvas, ctx, bar, launch, slideNoEl, toolsEl, slidesEl;
   let rect = null;            // slide box in CSS px — updated in place() / on pen-down
@@ -260,10 +271,17 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 
   // ---------- pointer drawing ----------
   const xy = (e) => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  let penSeen = false;   // once a stylus is used, bare-touch input stops drawing (palm rejection)
   function onDown(e) {
     if (!state.on) return;
     e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'pen') penSeen = true;
+    // palm rejection: with a stylus in play, finger/palm touches neither draw
+    // nor reach the page (no iOS text-selection callouts on the slide)
+    if (e.pointerType === 'touch' && cfg.palmRejection && penSeen) return;
+    if (state.drawing) return;               // one stroke at a time
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    state.pid = e.pointerId;
     rect = canvas.getBoundingClientRect();   // refresh once per gesture (zoom-safe)
     const p = xy(e);
     pushUndo();
@@ -274,7 +292,7 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
     ctx.fillStyle = state.color; ctx.beginPath(); ctx.arc(p.x, p.y, state.width / 2, 0, Math.PI * 2); ctx.fill();
   }
   function onMove(e) {
-    if (!state.on || !state.drawing) return;
+    if (!state.on || !state.drawing || e.pointerId !== state.pid) return;
     e.preventDefault();
     const p = xy(e);
     if (state.drawing === 'erase') { eraseAt(p); return; }
@@ -286,7 +304,11 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
     ctx.strokeStyle = state.color; ctx.lineWidth = state.width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
   }
-  function onUp() { if (!state.drawing) return; state.drawing = false; state.cur = null; redraw(); save(); }
+  function onUp(e) {
+    if (!state.drawing || (e && e.pointerId !== state.pid)) return;
+    state.drawing = false; state.cur = null; state.pid = null;
+    redraw(); save();
+  }
   function eraseAt(p) {
     const id = slideId(), list = state.strokes[id] || [], keep = [];
     let changed = false;
@@ -451,6 +473,7 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
     const ov = state.overview;
     canvas.style.display = ov ? 'none' : '';
     canvas.classList.toggle('active', state.on);
+    document.body.classList.toggle('aht-noselect', state.on);
     bar.hidden = !state.on || ov;
     launch.hidden = state.on || ov;
     if (!bar.hidden) applyBarPos();   // re-clamp the (possibly dragged) bar
@@ -623,6 +646,9 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
     listen(canvas, 'pointermove', onMove);
     listen(canvas, 'pointerup', onUp);
     listen(canvas, 'pointercancel', onUp);
+    // swallow raw touch on the canvas while annotating — kills iOS long-press
+    // selection/magnifier that pointer events alone don't suppress
+    listen(canvas, 'touchstart', (e) => { if (state.on) e.preventDefault(); }, { passive: false });
     listen(document, 'keydown', onKey, true);
     if (reveal.registerKeyboardShortcut) {           // feed reveal's ? help overlay
       reveal.registerKeyboardShortcut(cfg.toggleKey.toUpperCase(), 'Toggle annotation');
@@ -643,6 +669,7 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
     [canvas, toolsEl, bar, document.getElementById('aht-styles')].forEach((n) => n && n.remove());
     canvas = toolsEl = bar = launch = slideNoEl = null;
     document.body.classList.remove('aht-chrome');
+    document.body.classList.remove('aht-noselect');
     state.on = false; state.overview = false; state.drawing = false;
     delete window.AutohideToolbar;
   }

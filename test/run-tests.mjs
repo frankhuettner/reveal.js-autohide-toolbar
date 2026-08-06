@@ -275,6 +275,33 @@ async function runSuite(browserType, label) {
       await page.waitForTimeout(200);
       assert(!(await page.evaluate(() => document.getElementById('aht-canvas').classList.contains('active'))), 'Esc did not exit');
     });
+    await test('palm rejection: after a pen stroke, bare touch stops drawing', async () => {
+      await page.keyboard.press('a');
+      await page.waitForTimeout(200);
+      const synth = (type, pt, x, y, id) => page.evaluate(([type, pt, x, y, id]) => {
+        const c = document.getElementById('aht-canvas');
+        const r = c.getBoundingClientRect();
+        c.dispatchEvent(new PointerEvent(type, {
+          pointerType: pt, pointerId: id, isPrimary: true,
+          clientX: r.left + x, clientY: r.top + y, bubbles: true, cancelable: true,
+        }));
+      }, [type, pt, x, y, id]);
+      // stylus stroke draws
+      await synth('pointerdown', 'pen', 200, 450, 71);
+      await synth('pointermove', 'pen', 280, 450, 71);
+      await synth('pointerup', 'pen', 280, 450, 71);
+      await page.waitForTimeout(200);
+      assert(colored(await pixel(page, 240, 450)), 'pen stroke did not draw');
+      // a bare touch afterwards (the palm) must NOT draw
+      await synth('pointerdown', 'touch', 200, 490, 72);
+      await synth('pointermove', 'touch', 280, 490, 72);
+      await synth('pointerup', 'touch', 280, 490, 72);
+      await page.waitForTimeout(200);
+      assert(!colored(await pixel(page, 240, 490)), 'palm touch drew despite stylus use');
+      await page.keyboard.press('x');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    });
     await test('annotation bar can be dragged by its grip', async () => {
       await page.keyboard.press('a');
       await page.waitForTimeout(200);

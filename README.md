@@ -12,7 +12,8 @@ toolbar** with everything you need at the podium.
   corner, hides when it leaves; slides get the whole screen.
 - 📱 **Touch-ready** — toolbar stays visible on no-hover devices, tap the
   left/right half to navigate, swipe works (reveal built-in), draw with a
-  finger or stylus.
+  finger or stylus. **Palm rejection**: once a stylus is used, bare touches no
+  longer draw and can't trigger iOS text-selection callouts — rest your palm.
 - 💾 **Persistent ink** — strokes survive refresh (localStorage, per deck) and
   window resizing; they even keep their shape if you later change the deck's
   aspect ratio (aspect-fit, not stretched).
@@ -79,6 +80,7 @@ Reveal.initialize({
     tools: ['prev','next','sep','overview','speaker','fullscreen','sep','annotate','slideno'],
     position: 'bottom-left',   // or 'bottom-right' (e.g. when reveal.js-menu owns the left corner)
     toggleKey: 'a',            // annotation key; change on autoSlide decks (core uses A for pause)
+    palmRejection: true,       // after first stylus use, bare touches stop drawing
   },
 });
 ```
