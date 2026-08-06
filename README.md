@@ -118,8 +118,9 @@ What the plugin is built to survive (and what to re-verify after changes):
 7. **Scroll view** (`?view=scroll`) — plugin disables itself.
 8. **Touch** — swipe, tap-halves, persistent toolbar, finger/stylus drawing;
    taps on links/buttons don't navigate.
-9. **Safari** — toolbar icons render (SVG carries `xmlns`); pen/eraser cursor
-   falls back to `crosshair`/`cell` (Safari ignores SVG cursors).
+9. **Safari** — toolbar icons render (SVG carries `xmlns`); pen/eraser cursors
+   render as shapes (verified on current macOS Safari); older browsers fall
+   back to `crosshair`/`cell`.
 10. **DPI changes** — drag the window to a different-DPI monitor or change
     browser zoom: canvas re-places crisply.
 11. **Vertical stacks** — ink is keyed `h-v`, so decks with vertical slides work.
@@ -207,8 +208,9 @@ Reveal.initialize({ scrollActivationWidth: 0, /* … */ });
 - **Single, full-viewport deck.** Not yet multi-deck / embedded-safe: UI is
   appended to `<body>`, listeners are document-level.
 - **Scroll view** (`view: 'scroll'`) — plugin disables itself (see above).
-- **Safari shows keyword cursors** instead of the pen/eraser shapes (WebKit
-  doesn't render SVG cursors).
+- **Older browsers may show keyword cursors** (`crosshair`/`cell`) instead of
+  the pen/eraser shapes — the SVG cursors render fine in current Chrome,
+  Firefox, and Safari (Safari verified manually on macOS).
 - **Ink is per-browser** (localStorage) — it doesn't follow you across machines,
   and private windows forget it.
 - Annotations are **not baked into PDF export** (export is deliberately clean).
