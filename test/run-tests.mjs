@@ -317,6 +317,16 @@ async function runSuite(browserType, label) {
       assert(Math.abs(r2.x - r1.x - 250) < 25 && Math.abs(r2.y - r1.y + 80) < 25,
         `bar did not follow drag: ${JSON.stringify({ from: r1, to: r2 })}`);
     });
+    await test('annotation bar fits narrow viewports (wraps, close stays reachable)', async () => {
+      await page.setViewportSize({ width: 360, height: 740 });
+      await page.waitForTimeout(500);
+      const barBox = await page.locator('#aht-bar').boundingBox();
+      assert(barBox.x >= 0 && barBox.x + barBox.width <= 360 + 1, 'bar overflows narrow viewport: ' + JSON.stringify(barBox));
+      const closeBox = await page.locator('#aht-bar button[title*="Exit"]').boundingBox();
+      assert(closeBox && closeBox.x >= 0 && closeBox.x + closeBox.width <= 360 + 1, 'close button not reachable: ' + JSON.stringify(closeBox));
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.waitForTimeout(500);
+    });
     await test('annotation bar minimizes to grip + restore button', async () => {
       const wide = (await page.locator('#aht-bar').boundingBox()).width;
       await page.locator('#aht-minbtn').click();

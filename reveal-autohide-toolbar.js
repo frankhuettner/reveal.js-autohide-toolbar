@@ -140,6 +140,8 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 #aht-bar {
   position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: calc(var(--aht-z, 30) + 30);
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  flex-wrap: wrap; justify-content: center;
+  max-width: calc(100vw - 16px); box-sizing: border-box;
   background: var(--aht-bar-bg, rgba(6,18,42,.92));
   border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.4);
   font-family: var(--aht-font, 'Open Sans', system-ui, sans-serif);
