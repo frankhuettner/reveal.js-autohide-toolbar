@@ -2,7 +2,10 @@
 # Note: authored locally and not yet exercised on GitHub — if the first run
 # fails, the usual suspect is browser OS-dependencies (the install-deps step).
 name: test
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
