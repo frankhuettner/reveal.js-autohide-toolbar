@@ -517,7 +517,8 @@ async function runSuite(browserType, label) {
       CURPAGE = p2;
       const errs = [];
       trackErrors(p2, errs);
-      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      // fresh mobile context = cold CDN cache; don't gate on networkidle
+      await p2.goto(DEMO, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await waitReady(p2);
       await p2.waitForTimeout(3000);
       assert(await p2.evaluate(() => document.body.classList.contains('aht-chrome')), 'toolbar not persistent on touch');
