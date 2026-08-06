@@ -26,19 +26,20 @@ const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright-chromium');
 const { webkit } = require('playwright-webkit');
 
-// Works in two layouts: the standalone plugin repo (server root = plugin dir),
-// and the original monorepo, where the sibling example-deck deck exists and is
-// smoke-tested too (server root = one level up).
-const MONO = path.resolve(PLUGIN, '..');
-const HAS_SIBLING = fs.existsSync(path.join(MONO, 'example-deck', 'index.html'));
-const ROOT = HAS_SIBLING ? MONO : PLUGIN;
-const PREFIX = HAS_SIBLING ? '/' + path.basename(PLUGIN) : '';
+// Optionally smoke-test a real deck living NEXT TO this repo (it must load the
+// plugin). Opt in via env var:  AHT_SMOKE_DECK=<sibling-dir-name> npm test
+// Without it, the suite is fully self-contained (server root = plugin dir).
+const SMOKE_DECK = process.env.AHT_SMOKE_DECK || null;
+const PARENT = path.resolve(PLUGIN, '..');
+const HAS_SMOKE = !!(SMOKE_DECK && fs.existsSync(path.join(PARENT, SMOKE_DECK, 'index.html')));
+const ROOT = HAS_SMOKE ? PARENT : PLUGIN;
+const PREFIX = HAS_SMOKE ? '/' + path.basename(PLUGIN) : '';
 
 const PORT = 8036;
 const BASE = `http://127.0.0.1:${PORT}`;
 const DEMO = `${BASE}${PREFIX}/demo/`;
 const FIXTURE = `${BASE}${PREFIX}/test/fixture-options.html`;
-const SIBLING = `${BASE}/example-deck/`;
+const SMOKE = `${BASE}/${SMOKE_DECK}/`;
 
 // ---------- tiny harness ----------
 const results = [];
@@ -542,32 +543,30 @@ async function runSuite(browserType, label) {
       CURPAGE = page;
     });
 
-    log(`=== ${label} · G9 real deck smoke test (example-deck) ===`);
-    if (!HAS_SIBLING) { log('  SKIP  [' + label + '] sibling smoke test (standalone repo — no sibling deck)'); return; }
-    await test('sibling deck: 22 slides, plugin alive, fragments work, no errors', async () => {
+    log(`=== ${label} · G9 sibling-deck smoke test ===`);
+    if (!HAS_SMOKE) { log('  SKIP  [' + label + '] sibling-deck smoke test (set AHT_SMOKE_DECK=<dir> to enable)'); return; }
+    await test('sibling deck: plugin alive, counter matches, nav works, no errors', async () => {
       const errs = [];
       const p2 = await ctx.newPage();
       CURPAGE = p2;
       trackErrors(p2, errs);
-      await p2.goto(SIBLING, { waitUntil: 'networkidle' });
+      await p2.goto(SMOKE, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await waitReady(p2);
       await p2.waitForTimeout(1500);
       const t = await p2.evaluate(() => ({
         slides: document.querySelectorAll('.reveal .slides > section').length,
         toolbar: !!document.getElementById('aht-toolbar'),
-        counter: document.getElementById('aht-slideno').textContent,
+        counter: (document.getElementById('aht-slideno') || {}).textContent,
       }));
-      assert(t.slides === 22, 'slides=' + t.slides);
+      assert(t.slides > 0, 'no slides found');
       assert(t.toolbar, 'toolbar missing');
-      assert(t.counter === '1 / 22', 'counter=' + t.counter);
-      await p2.evaluate(() => window.Reveal.slide(2));
-      await p2.waitForTimeout(600);
+      assert(t.counter === `1 / ${t.slides}`, `counter=${t.counter} for ${t.slides} slides`);
       await p2.keyboard.press('ArrowRight');
-      await p2.waitForTimeout(300);
-      const frag = await p2.evaluate(() => window.Reveal.getIndices().f);
-      assert(frag === 0, 'fragment nav broken, f=' + frag);
-      await shot(p2, 'g9-sibling');
-      const fatal = errs.filter((e) => !/tailwind|cdn.tailwindcss/i.test(e));
+      await p2.waitForTimeout(400);
+      const i = await p2.evaluate(() => window.Reveal.getIndices());
+      assert(i.h > 0 || i.f >= 0, 'ArrowRight did not navigate: ' + JSON.stringify(i));
+      await shot(p2, 'g9-smoke-deck');
+      const fatal = errs.filter((e) => !/tailwind|cdn.tailwindcss/i.test(e));   // runtime-CSS decks are noisy
       assert(fatal.length === 0, fatal.join(' | '));
       await p2.close();
       CURPAGE = page;

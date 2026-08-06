@@ -1,5 +1,8 @@
 # reveal.js-autohide-toolbar
 
+**▶ [Try the live demo](https://huettner.io/reveal.js-autohide-toolbar/demo/)** —
+draw on the slides, drag the toolbar, switch the deck format, all in your browser.
+
 A presenter toolkit for [reveal.js](https://revealjs.com), in one dependency-free
 file: **ink annotation** over your slides plus a **Slidev-style auto-hiding
 toolbar** with everything you need at the podium.
