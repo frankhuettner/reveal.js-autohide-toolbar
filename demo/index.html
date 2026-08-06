@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>reveal.js-autohide-toolbar — demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/theme/white.css" />
+  <style>
+    /* optional theming — delete this block for the plugin's defaults */
+    :root { --aht-accent: #2563eb; }
+    .demo-hint { font-size: .6em; color: #666; }
+  </style>
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+
+    <section>
+      <h2>reveal.js-autohide-toolbar</h2>
+      <p>Move the mouse to the <strong>bottom-left corner</strong> — the toolbar appears.</p>
+      <p class="demo-hint">Press <kbd>A</kbd> (or the pen button) and draw on this slide.<br/>
+      <kbd>E</kbd> eraser · <kbd>Ctrl+Z</kbd> undo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.</p>
+      <aside class="notes">Speaker notes work: press S or use the toolbar button.</aside>
+    </section>
+
+    <section>
+      <h2>Ink sticks to the slide</h2>
+      <p>Draw something, then <strong>resize the window</strong> — the ink stays
+      on the slide content through any letterboxing. Leave the slide and come
+      back: it's still here. Reload: still here.</p>
+      <aside class="notes">Strokes are stored per slide as ratio coordinates and persisted to localStorage.</aside>
+    </section>
+
+    <section>
+      <h2>Format-change test</h2>
+      <p>Draw a circle, then switch the deck format:</p>
+      <p>
+        <button onclick="Reveal.configure({ width: 960, height: 540 })">16:9</button>
+        <button onclick="Reveal.configure({ width: 960, height: 720 })">4:3</button>
+      </p>
+      <p class="demo-hint">The circle stays a circle — strokes remember their aspect
+      ratio and are aspect-fit, not stretched. (Buttons also demo that taps on
+      interactive elements never trigger slide navigation.)</p>
+    </section>
+
+    <section>
+      <h2>Touch</h2>
+      <p>On a phone or tablet: the toolbar is always visible (no hover),
+      <strong>swipe</strong> or <strong>tap the left/right half</strong> to navigate,
+      and the pen works with your finger or stylus.</p>
+      <a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/plugin/notes/notes.js"></script>
+<script src="../reveal-autohide-toolbar.js"></script>
+<script>
+  Reveal.initialize({
+    width: 960,
+    height: 540,
+    hash: true,
+    controls: false,          // the plugin's toolbar replaces the arrows + slide number
+    slideNumber: false,
+    scrollActivationWidth: 0, // stay in slide mode on phones (keeps toolbar + ink)
+    plugins: [ RevealNotes, RevealAutohideToolbar ],
+    // autohideToolbar: { ... }        // all options are optional — see the README
+  });
+</script>
+</body>
+</html>

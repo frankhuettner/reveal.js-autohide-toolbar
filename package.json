@@ -1,0 +1,44 @@
+{
+  "name": "reveal.js-autohide-toolbar",
+  "version": "0.1.0",
+  "description": "Presenter toolkit for reveal.js: ink annotation (pen, eraser, undo, blackboard) plus a Slidev-style auto-hiding toolbar with navigation, overview, speaker view, and fullscreen. Touch-ready, persistent, dependency-free.",
+  "main": "reveal-autohide-toolbar.js",
+  "module": "reveal-autohide-toolbar.mjs",
+  "exports": {
+    ".": {
+      "import": "./reveal-autohide-toolbar.mjs",
+      "default": "./reveal-autohide-toolbar.js"
+    },
+    "./reveal-autohide-toolbar.js": "./reveal-autohide-toolbar.js"
+  },
+  "files": [
+    "reveal-autohide-toolbar.js",
+    "reveal-autohide-toolbar.mjs"
+  ],
+  "scripts": {
+    "demo": "python3 -m http.server 8020 --bind 127.0.0.1",
+    "test": "node test/run-tests.mjs"
+  },
+  "keywords": [
+    "reveal.js",
+    "revealjs",
+    "plugin",
+    "annotation",
+    "chalkboard",
+    "drawing",
+    "pen",
+    "presentation",
+    "toolbar",
+    "slidev"
+  ],
+  "author": "Frank Huettner",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frankhuettner/reveal.js-autohide-toolbar.git"
+  },
+  "devDependencies": {
+    "playwright-chromium": "~1.62.1",
+    "playwright-webkit": "~1.62.1"
+  }
+}

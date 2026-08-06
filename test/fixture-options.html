@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>aht test fixture — non-default options</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/theme/white.css" />
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+    <section><h2>Fixture 1</h2></section>
+    <section><h2>Fixture 2</h2></section>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.js"></script>
+<script src="../reveal-autohide-toolbar.js"></script>
+<script>
+  Reveal.initialize({
+    hash: false,
+    controls: false,
+    slideNumber: false,
+    scrollActivationWidth: 0,
+    plugins: [ RevealAutohideToolbar ],
+    autohideToolbar: {
+      position: 'bottom-right',
+      toggleKey: 'q',
+      persist: false,
+      tools: ['annotate', 'slideno'],
+      colors: ['#123456', '#FFFFFF', '#00FF00'],
+      defaultColor: '#00FF00',
+    },
+  });
+</script>
+</body>
+</html>

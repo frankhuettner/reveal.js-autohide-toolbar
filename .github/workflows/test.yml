@@ -1,0 +1,22 @@
+# Runs the full Playwright suite (chromium + webkit) on every push/PR.
+# Note: authored locally and not yet exercised on GitHub — if the first run
+# fails, the usual suspect is browser OS-dependencies (the install-deps step).
+name: test
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # OS libraries for the playwright browsers (the meta CLI installs for all engines)
+      - run: npx playwright@1.62.1 install-deps
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-artifacts
+          path: test/artifacts
