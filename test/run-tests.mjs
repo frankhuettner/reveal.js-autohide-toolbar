@@ -1,18 +1,24 @@
 /*
  * Comprehensive Playwright test suite for reveal.js-autohide-toolbar.
- * Runs the full suite on BOTH engines: Chromium and WebKit (Safari engine).
+ * Runs the full suite as a MATRIX: {Chromium, WebKit} × {reveal 5.x, 6.x}.
  *
  * Run OUTSIDE the sandbox (a normal terminal), from anywhere:
  *   node reveal.js-autohide-toolbar/test/run-tests.mjs
  *
- * - Spawns its own static server (port 8036, repo root).
+ * - Spawns its own static server (port 8036, plugin dir) — fully self-contained.
+ *   The server rewrites the pinned reveal.js CDN version in every served HTML
+ *   page to the matrix target, including reveal 6's moved plugin paths
+ *   (plugin/<name>/<name>.js ↔ dist/plugin/<name>.js), so ONE set of fixtures
+ *   tests every reveal version.
  * - Browsers come from this package's devDependencies (npm install first).
  * - Writes everything to test/artifacts/: results.log, results.json, *.png
- *   (screenshots are prefixed with the engine; failures get fail-*.png).
+ *   (screenshots are prefixed with engine@version; failures get fail-*.png).
+ * - G9 smoke-tests real-world decks vendored from hakimel/reveal.js@5.2.1
+ *   (MIT) in test/decks/ — stacks, fragments, markdown, MathJax, auto-animate.
  */
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
+import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -26,20 +32,27 @@ const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright-chromium');
 const { webkit } = require('playwright-webkit');
 
-// Optionally smoke-test a real deck living NEXT TO this repo (it must load the
-// plugin). Opt in via env var:  AHT_SMOKE_DECK=<sibling-dir-name> npm test
-// Without it, the suite is fully self-contained (server root = plugin dir).
-const SMOKE_DECK = process.env.AHT_SMOKE_DECK || null;
-const PARENT = path.resolve(PLUGIN, '..');
-const HAS_SMOKE = !!(SMOKE_DECK && fs.existsSync(path.join(PARENT, SMOKE_DECK, 'index.html')));
-const ROOT = HAS_SMOKE ? PARENT : PLUGIN;
-const PREFIX = HAS_SMOKE ? '/' + path.basename(PLUGIN) : '';
+// The reveal.js versions of the test matrix: last 5.x (the pin the fixtures
+// carry) and current 6.x. The server rewrites served HTML to each target.
+const VERSIONS = ['5.2.1', '6.0.1'];
 
 const PORT = 8036;
 const BASE = `http://127.0.0.1:${PORT}`;
-const DEMO = `${BASE}${PREFIX}/demo/`;
-const FIXTURE = `${BASE}${PREFIX}/test/fixture-options.html`;
-const SMOKE = `${BASE}/${SMOKE_DECK}/`;
+const DEMO = `${BASE}/demo/`;
+const FIXTURE = `${BASE}/test/fixture-options.html`;
+const KEYS_A = `${BASE}/test/fixture-keys-a.html`;
+const KEYS_B = `${BASE}/test/fixture-keys-b.html`;
+const EMBED = `${BASE}/test/fixture-embed.html`;
+
+// Real-world decks vendored from hakimel/reveal.js@5.2.1 (MIT) in test/decks/,
+// with the plugin injected — smoke coverage for feature-heavy decks the
+// fixtures don't model (vertical stacks, fragments, markdown, highlight,
+// MathJax, auto-animate). `noisy` filters expected third-party network chatter.
+const DECKS = [
+  { file: 'demo.html', name: 'official demo (stacks, fragments, markdown, highlight)', noisy: /slid\.es/i },
+  { file: 'math.html', name: 'math example (MathJax)', noisy: /mathjax|cdnjs/i },
+  { file: 'auto-animate.html', name: 'auto-animate example', noisy: null },
+];
 
 // ---------- tiny harness ----------
 const results = [];
@@ -256,16 +269,6 @@ async function runSuite(browserType, label) {
       const px = await pixel(page, 400, 520);
       assert(px[2] > 120 && px[0] < 90, 'not blue: ' + px);
     });
-    await test('blackboard toggle sets board background; dark pen auto-brightens', async () => {
-      await page.locator('#aht-bar .aht-swatch[data-color="#000000"]').click();
-      await page.locator('#aht-board').click();
-      await page.waitForTimeout(200);
-      assert(await page.evaluate(() => document.getElementById('aht-canvas').classList.contains('board')), 'board class missing');
-      const active = await page.evaluate(() => document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'));
-      assert(active === '#FFFFFF', 'dark pen not auto-brightened, active=' + active);
-      await shot(page, 'g3-board');
-      await page.locator('#aht-board').click();
-    });
     await test('X clears this slide; Esc exits annotation', async () => {
       await page.locator('#aht-bar .aht-swatch[data-color="#FF0000"]').click();
       await draw(page, [[300, 350], [500, 350]]);
@@ -303,18 +306,21 @@ async function runSuite(browserType, label) {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
     });
-    await test('annotation bar can be dragged by its grip', async () => {
+    await test('annotation bar is one row at desktop width and drags by its grip', async () => {
       await page.keyboard.press('a');
       await page.waitForTimeout(200);
       const r1 = await page.locator('#aht-bar').boundingBox();
       const g = await page.locator('#aht-bar .aht-grip').boundingBox();
+      // regression: a positioned element shrink-to-fits into the space right of
+      // 'left' — without width:max-content the centred bar wrapped to two rows
+      assert(r1.height < 60, 'bar wrapped to multiple rows at 1280px: ' + JSON.stringify(r1));
       await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
       await page.mouse.down();
-      await page.mouse.move(g.x + g.width / 2 + 250, g.y + g.height / 2 - 80, { steps: 5 });
+      await page.mouse.move(g.x + g.width / 2 + 150, g.y + g.height / 2 - 80, { steps: 5 });
       await page.mouse.up();
       await page.waitForTimeout(200);
       const r2 = await page.locator('#aht-bar').boundingBox();
-      assert(Math.abs(r2.x - r1.x - 250) < 25 && Math.abs(r2.y - r1.y + 80) < 25,
+      assert(Math.abs(r2.x - r1.x - 150) < 25 && Math.abs(r2.y - r1.y + 80) < 25,
         `bar did not follow drag: ${JSON.stringify({ from: r1, to: r2 })}`);
     });
     await test('annotation bar fits narrow viewports (wraps, close stays reachable)', async () => {
@@ -342,9 +348,11 @@ async function runSuite(browserType, label) {
 
     log(`=== ${label} · G4 persistence & vanish-glitch regression ===`);
     await test('ink survives slide change and return (regression: vanish glitch)', async () => {
-      await page.keyboard.press('a');
+      // enter/leave annotation via the API: deterministic even if an earlier
+      // test failed mid-way and left the toggle in an unexpected state
+      await page.evaluate(() => window.AutohideToolbar.enable(true));
       await draw(page, [[350, 250], [450, 250]]);
-      await page.keyboard.press('Escape');
+      await page.evaluate(() => window.AutohideToolbar.enable(false));
       await page.evaluate(() => window.Reveal.next());
       await page.waitForTimeout(800);
       assert(!colored(await pixel(page, 400, 250)), 'ink leaked onto next slide');
@@ -377,27 +385,43 @@ async function runSuite(browserType, label) {
       await p2.evaluate(() => window.Reveal.slide(0));
       await p2.waitForTimeout(400);
       // draw in the FIRST window; the second must adopt it via the storage event
-      await page.keyboard.press('a');
+      await page.evaluate(() => window.AutohideToolbar.enable(true));
       await draw(page, [[600, 300], [700, 300]]);
-      await page.keyboard.press('Escape');
+      await page.evaluate(() => window.AutohideToolbar.enable(false));
       await p2.waitForTimeout(600);
       assert(colored(await pixel(p2, 650, 300)), 'second window did not sync the new stroke');
       await p2.close();
       CURPAGE = page;
     });
-    await test('Shift+X clears the whole deck and storage', async () => {
-      await page.keyboard.press('a');
+    await test('Shift+X asks for confirmation; Esc cancels, confirm clears + tombstones', async () => {
+      await page.evaluate(() => window.AutohideToolbar.enable(true));
       await page.keyboard.press('Shift+X');
-      await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
-      assert(!colored(await pixel(page, 400, 250)), 'ink survived Shift+X');
-      const stored = await page.evaluate(() => localStorage.getItem('aht:' + location.pathname));
-      assert(stored === null, 'storage not cleared: ' + stored);
+      assert(await page.evaluate(() => !!document.getElementById('aht-confirm-wrap')), 'no confirmation dialog on Shift+X');
+      await page.keyboard.press('Escape');   // cancels the dialog, not the annotation mode
+      await page.waitForTimeout(200);
+      assert(await page.evaluate(() => !document.getElementById('aht-confirm-wrap')), 'Esc did not close the dialog');
+      assert(colored(await pixel(page, 400, 250)), 'cancelling still cleared the ink');
+      await page.keyboard.press('Shift+X');
+      await page.waitForTimeout(200);
+      await page.locator('#aht-confirm .aht-ok').click();
+      await page.evaluate(() => window.AutohideToolbar.enable(false));
+      await page.waitForTimeout(200);
+      assert(!colored(await pixel(page, 400, 250)), 'ink survived confirmed Shift+X');
+      // clear-all writes an EMPTY envelope (tombstone), not removeItem — that is
+      // what keeps a deck-embedded baseline from resurrecting
+      const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('aht:' + location.pathname)));
+      assert(stored && stored.v === 1 && Object.keys(stored.strokes).length === 0 && stored.boards.length === 0,
+        'tombstone not written: ' + JSON.stringify(stored));
     });
 
     log(`=== ${label} · G5 geometry robustness ===`);
     await test('ink sticks to slide content across window resize', async () => {
-      await page.keyboard.press('a');
+      await page.evaluate(() => {
+        if (window.Reveal.isOverview()) window.Reveal.toggleOverview();   // stray-state guard
+        window.AutohideToolbar.enable(true);
+      });
+      await page.waitForTimeout(300);
       const b1 = await canvasBox(page);
       await draw(page, [[b1.width / 2 - 50, b1.height / 2], [b1.width / 2 + 50, b1.height / 2]]);
       await page.setViewportSize({ width: 900, height: 760 });
@@ -446,13 +470,19 @@ async function runSuite(browserType, label) {
     });
 
     log(`=== ${label} · G6 print & scroll-view modes ===`);
-    await test('?print-pdf: no plugin chrome at all', async () => {
+    await test('?print-pdf: no plugin chrome, saved ink rendered as SVG', async () => {
       const p2 = await ctx.newPage();
       CURPAGE = p2;
       await p2.goto(DEMO + '?print-pdf', { waitUntil: 'networkidle' });
       await p2.waitForTimeout(1500);
-      const t = await p2.evaluate(() => [!!document.getElementById('aht-canvas'), !!document.getElementById('aht-toolbar')]);
+      const t = await p2.evaluate(() => [
+        !!document.getElementById('aht-canvas'),
+        !!document.getElementById('aht-toolbar'),
+        document.querySelectorAll('.aht-print-ink').length,
+      ]);
       assert(!t[0] && !t[1], JSON.stringify(t));
+      // G5 left a saved stroke on slide 1 — it must print
+      assert(t[2] >= 1, 'no SVG ink in print view: ' + JSON.stringify(t));
       await p2.close();
       CURPAGE = page;
     });
@@ -553,31 +583,351 @@ async function runSuite(browserType, label) {
       CURPAGE = page;
     });
 
-    log(`=== ${label} · G9 sibling-deck smoke test ===`);
-    if (!HAS_SMOKE) { log('  SKIP  [' + label + '] sibling-deck smoke test (set AHT_SMOKE_DECK=<dir> to enable)'); return; }
-    await test('sibling deck: plugin alive, counter matches, nav works, no errors', async () => {
+    log(`=== ${label} · G10 board slides ===`);
+    await test('board button inserts an uncounted board slide and auto-enables the pen', async () => {
+      await page.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(page);
+      await page.evaluate(() => localStorage.clear());
+      await page.reload({ waitUntil: 'networkidle' });
+      await waitReady(page);
+      await page.evaluate(() => window.Reveal.slide(0));
+      await page.waitForTimeout(400);
+      await page.keyboard.press('a');
+      await page.waitForTimeout(200);
+      await page.locator('#aht-bar .aht-swatch[data-color="#000000"]').click();  // must auto-brighten on the dark board
+      await page.locator('#aht-board').click();
+      await page.waitForTimeout(600);
+      const t = await page.evaluate(() => ({
+        boards: document.querySelectorAll('[data-aht-board]').length,
+        onBoard: !!window.Reveal.getCurrentSlide().getAttribute('data-aht-board'),
+        uncounted: window.Reveal.getCurrentSlide().getAttribute('data-visibility') === 'uncounted',
+        active: document.getElementById('aht-canvas').classList.contains('active'),
+        counter: document.getElementById('aht-slideno').textContent,
+        swatch: document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'),
+        surfaceShown: !document.getElementById('aht-surface').hidden,
+      }));
+      assert(t.boards === 1, 'boards=' + t.boards);
+      assert(t.onBoard && t.uncounted && t.active, JSON.stringify(t));
+      assert(t.counter === '1 / 4', 'board must not shift the count: ' + t.counter);
+      assert(t.swatch === '#FFFFFF', 'dark pen not auto-brightened: ' + t.swatch);
+      assert(t.surfaceShown, 'surface toggle not shown on a board');
+      await shot(page, 'g10-board');
+    });
+    await test('surface toggle flips dark/white; pen contrast follows', async () => {
+      await page.locator('#aht-surface').click();
+      await page.waitForTimeout(400);
+      const t = await page.evaluate(() => ({
+        bg: window.Reveal.getCurrentSlide().getAttribute('data-background-color'),
+        swatch: document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'),
+      }));
+      assert(t.bg === '#FFFFFF', 'board not white: ' + t.bg);
+      assert(t.swatch === '#000000', 'light pen not auto-darkened: ' + t.swatch);
+      await shot(page, 'g10-whiteboard');
+      await page.locator('#aht-surface').click();   // back to dark
+      await page.waitForTimeout(400);
+      const sw = await page.evaluate(() => document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'));
+      assert(sw === '#FFFFFF', 'flip back to dark did not re-brighten the pen: ' + sw);
+    });
+    await test('board ink persists: reload restores the board slide and its ink', async () => {
+      await draw(page, [[300, 300], [500, 300]]);
+      assert(colored(await pixel(page, 400, 300)), 'no ink on the board');
+      await page.reload({ waitUntil: 'networkidle' });
+      await waitReady(page);
+      await page.evaluate(() => window.Reveal.slide(1));   // the board lives at index 1
+      await page.waitForTimeout(600);
+      const t = await page.evaluate(() => ({
+        boards: document.querySelectorAll('[data-aht-board]').length,
+        onBoard: !!window.Reveal.getCurrentSlide().getAttribute('data-aht-board'),
+      }));
+      assert(t.boards === 1 && t.onBoard, JSON.stringify(t));
+      assert(colored(await pixel(page, 400, 300)), 'board ink lost after reload');
+    });
+    await test('board removal asks for confirmation; cancel keeps, confirm deletes', async () => {
+      await page.locator('#aht-board').click();   // on a board, the button means "remove"
+      await page.waitForTimeout(200);
+      assert(await page.evaluate(() => !!document.getElementById('aht-confirm-wrap')), 'no confirmation dialog');
+      await page.locator('#aht-confirm .aht-cancel').click();
+      await page.waitForTimeout(200);
+      assert(await page.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 1), 'cancel removed the board');
+      await page.locator('#aht-board').click();
+      await page.waitForTimeout(200);
+      await page.locator('#aht-confirm .aht-ok').click();
+      await page.waitForTimeout(600);
+      const t = await page.evaluate(() => ({
+        boards: document.querySelectorAll('[data-aht-board]').length,
+        h: window.Reveal.getIndices().h,
+        stored: JSON.parse(localStorage.getItem('aht:' + location.pathname)),
+      }));
+      assert(t.boards === 0, 'board not removed');
+      assert(t.h === 0, 'not back on the anchor slide: h=' + t.h);
+      assert(t.stored.boards.length === 0
+        && Object.keys(t.stored.strokes).every((k) => k.indexOf('b:') !== 0), 'board data still stored');
+    });
+    await test('live board insert/remove syncs to a second window', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await page.evaluate(() => window.AutohideToolbar.addBoard());
+      await p2.waitForTimeout(900);
+      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 1), 'second window did not gain the board');
+      await page.evaluate(() => window.AutohideToolbar.removeBoard());
+      await p2.waitForTimeout(900);
+      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 0), 'second window kept the removed board');
+      await p2.close();
+      CURPAGE = page;
+    });
+
+    log(`=== ${label} · G11 stable slide keys & migration ===`);
+    await test('ink follows its slide when the deck is edited (slide inserted before it)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(KEYS_A, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.removeItem('aht:test-keys'));
+      await p2.evaluate(() => window.Reveal.slide(1));   // "Beta"
+      await p2.waitForTimeout(400);
+      await p2.keyboard.press('a');
+      await p2.waitForTimeout(200);
+      const b = await p2.locator('#aht-canvas').boundingBox();
+      await draw(p2, [[b.width / 2 - 80, b.height / 2], [b.width / 2 + 80, b.height / 2]]);
+      // open the EDITED deck (extra slide at the front), same storage key
+      await p2.goto(KEYS_B, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => window.Reveal.slide(2));   // "Beta" is now index 2
+      await p2.waitForTimeout(500);
+      const b2 = await p2.locator('#aht-canvas').boundingBox();
+      assert(colored(await pixel(p2, b2.width / 2, b2.height / 2)), 'ink did not follow its slide into the edited deck');
+      await p2.evaluate(() => window.Reveal.slide(1));   // "Alpha" — index-keyed storage would put the ink here
+      await p2.waitForTimeout(500);
+      assert(!colored(await pixel(p2, b2.width / 2, b2.height / 2)), 'ink leaked onto the wrong slide');
+      await p2.evaluate(() => localStorage.removeItem('aht:test-keys'));
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('legacy index-keyed storage (pre-v0.3) is migrated to stable keys', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(KEYS_A, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      // seed the OLD format: a bare strokes map keyed by slide index 'h-v'
+      await p2.evaluate(() => localStorage.setItem('aht:test-keys', JSON.stringify({
+        '1-0': [{ color: '#FF0000', width: 6, a: 1.7778, points: [{ xr: 0.4, yr: 0.5 }, { xr: 0.5, yr: 0.5 }, { xr: 0.6, yr: 0.5 }] }],
+      })));
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => window.Reveal.slide(1));
+      await p2.waitForTimeout(500);
+      const b = await p2.locator('#aht-canvas').boundingBox();
+      assert(colored(await pixel(p2, b.width / 2, b.height / 2)), 'migrated ink not shown on its slide');
+      // the next edit upgrades the stored format to the v1 envelope with content keys
+      await p2.keyboard.press('a');
+      await p2.waitForTimeout(200);
+      await draw(p2, [[100, 100], [140, 140]]);
+      const up = await p2.evaluate(() => JSON.parse(localStorage.getItem('aht:test-keys')));
+      assert(up && up.v === 1 && Object.keys(up.strokes).some((k) => k.indexOf('c:') === 0),
+        'storage not upgraded: ' + JSON.stringify(up).slice(0, 100));
+      await p2.evaluate(() => localStorage.removeItem('aht:test-keys'));
+      await p2.close();
+      CURPAGE = page;
+    });
+
+    log(`=== ${label} · G12 embedded baseline, save & PDF ink ===`);
+    await test('deck-embedded baseline: ink + board slide appear on a cold load', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(EMBED, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      const t = await p2.evaluate(() => ({
+        boards: document.querySelectorAll('[data-aht-board]').length,
+        counter: document.getElementById('aht-slideno').textContent,
+      }));
+      assert(t.boards === 1, 'embedded board not materialized');
+      assert(t.counter === '1 / 2', 'board wrongly counted: ' + t.counter);
+      const b = await p2.locator('#aht-canvas').boundingBox();
+      assert(colored(await pixel(p2, b.width / 2, b.height / 2)), 'embedded ink not rendered');
+      await shot(p2, 'g12-embed-baseline');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('?aht-ink=0 presents clean without deleting anything', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(EMBED + '?aht-ink=0', { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 0), 'clean mode still shows boards');
+      const b = await p2.locator('#aht-canvas').boundingBox();
+      assert(!colored(await pixel(p2, b.width / 2, b.height / 2)), 'clean mode still shows ink');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('confirmed clear-all suppresses the embedded baseline across reloads', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(EMBED, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.keyboard.press('a');
+      await p2.keyboard.press('Shift+X');
+      await p2.waitForTimeout(200);
+      await p2.locator('#aht-confirm .aht-ok').click();
+      await p2.waitForTimeout(400);
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 0), 'baseline board resurrected after clear-all');
+      const b = await p2.locator('#aht-canvas').boundingBox();
+      assert(!colored(await pixel(p2, b.width / 2, b.height / 2)), 'baseline ink resurrected after clear-all');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('export JSON / import JSON round-trip (import confirms before overwrite)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(EMBED, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());   // lift the tombstone → baseline is back
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.keyboard.press('a');
+      await p2.waitForTimeout(300);
+      const [dl] = await Promise.all([
+        p2.waitForEvent('download', { timeout: 10000 }),
+        p2.locator('#aht-export').click(),
+      ]);
+      const file = path.join(ART, `${label}-export.json`);
+      await dl.saveAs(file);
+      const env = JSON.parse(fs.readFileSync(file, 'utf8'));
+      assert(env.v === 1 && env.strokes['id:one'] && env.boards.length === 1, 'export content wrong: ' + JSON.stringify(env).slice(0, 100));
+      await p2.evaluate(() => window.AutohideToolbar.clearAll());   // API path clears without dialog
+      await p2.waitForTimeout(400);
+      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 0), 'clearAll left the board');
+      await p2.locator('#aht-bar input[type=file]').setInputFiles(file);
+      await p2.waitForTimeout(700);
+      // nothing to overwrite → no dialog; board + ink restored
+      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 1), 'import did not restore the board');
+      const b = await p2.locator('#aht-canvas').boundingBox();
+      assert(colored(await pixel(p2, b.width / 2, b.height / 2)), 'import did not restore the ink');
+      // importing over EXISTING ink must ask first
+      await p2.locator('#aht-bar input[type=file]').setInputFiles(file);
+      await p2.waitForTimeout(400);
+      assert(await p2.evaluate(() => !!document.getElementById('aht-confirm-wrap')), 'no confirmation on overwriting import');
+      await p2.locator('#aht-confirm .aht-cancel').click();
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('save annotated copy: downloaded HTML embeds the ink, source intact', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.keyboard.press('a');
+      await p2.waitForTimeout(200);
+      await draw(p2, [[300, 300], [500, 300]]);
+      const [dl] = await Promise.all([
+        p2.waitForEvent('download', { timeout: 10000 }),
+        p2.locator('#aht-savecopy').click(),
+      ]);
+      const file = path.join(ART, `${label}-annotated.html`);
+      await dl.saveAs(file);
+      const html = fs.readFileSync(file, 'utf8');
+      assert(/data-aht-annotations/.test(html), 'no embedded annotations block');
+      assert(html.includes('"v":1') && html.includes('points'), 'ink missing from the saved copy');
+      assert(html.includes('Format-change test'), 'deck source content missing from the copy');
+      assert(!html.includes('id="aht-toolbar"'), 'live plugin DOM leaked into the copy');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('?print-pdf renders embedded ink as SVG and the board as a page', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(EMBED, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());   // baseline again
+      await p2.goto(EMBED + '?print-pdf', { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.waitForTimeout(1500);
+      const t = await p2.evaluate(() => ({
+        ui: !!document.getElementById('aht-canvas') || !!document.getElementById('aht-toolbar'),
+        boards: document.querySelectorAll('[data-aht-board]').length,
+        svgs: document.querySelectorAll('.aht-print-ink').length,
+        strokes: document.querySelectorAll('.aht-print-ink path, .aht-print-ink circle').length,
+        pages: document.querySelectorAll('.pdf-page').length,
+      }));
+      assert(!t.ui, 'plugin UI present in print view');
+      assert(t.boards === 1, 'board slide missing in print: ' + JSON.stringify(t));
+      assert(t.svgs === 2 && t.strokes === 2, 'SVG ink wrong: ' + JSON.stringify(t));
+      assert(t.pages >= 3, 'expected 3+ pdf pages, got ' + t.pages);
+      await shot(p2, 'g12-print-ink');
+      await p2.close();
+      CURPAGE = page;
+    });
+
+    log(`=== ${label} · G9 real-world decks (vendored from hakimel/reveal.js) ===`);
+    for (const deck of DECKS) {
+      await test(`deck "${deck.name}": plugin alive, counter, nav, ink, no errors`, async () => {
+        const errs = [];
+        const p2 = await ctx.newPage();
+        CURPAGE = p2;
+        trackErrors(p2, errs);
+        await p2.goto(`${BASE}/test/decks/${deck.file}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await waitReady(p2);
+        await p2.waitForTimeout(1000);
+        const t = await p2.evaluate(() => ({
+          toolbar: !!document.getElementById('aht-toolbar'),
+          canvas: !!document.getElementById('aht-canvas'),
+          counter: (document.getElementById('aht-slideno') || {}).textContent || '',
+          total: window.Reveal.getTotalSlides(),
+        }));
+        assert(t.toolbar && t.canvas, 'plugin UI missing: ' + JSON.stringify(t));
+        assert(t.counter === `1 / ${t.total}`, `counter=${t.counter}, reveal total=${t.total}`);
+        await p2.keyboard.press('ArrowRight');
+        await p2.waitForTimeout(700);
+        const i = await p2.evaluate(() => window.Reveal.getIndices());
+        assert(i.h > 0 || i.v > 0 || i.f >= 0, 'ArrowRight did not navigate: ' + JSON.stringify(i));
+        await p2.evaluate(() => window.AutohideToolbar.enable(true));
+        await p2.waitForTimeout(300);
+        const b = await canvasBox(p2);
+        await draw(p2, [[b.width * 0.4, b.height * 0.5], [b.width * 0.6, b.height * 0.5]]);
+        assert(colored(await pixel(p2, b.width * 0.5, b.height * 0.5)), 'ink did not draw on this deck');
+        await p2.evaluate(() => window.AutohideToolbar.enable(false));
+        await shot(p2, `g9-${deck.file.replace('.html', '')}`);
+        // third-party network failures (logos, embeds, MathJax CDN) are not our
+        // bugs — only errors from our own origin or the page itself are fatal
+        const fatal = errs.filter((e) => !(deck.noisy && deck.noisy.test(e))
+          && !/^reqfail: https?:\/\/(?!127\.0\.0\.1)/.test(e));
+        assert(fatal.length === 0, fatal.join(' | ').slice(0, 300));
+        await p2.close();
+        CURPAGE = page;
+      });
+    }
+    await test('official demo ?print-pdf: fragment-cloned pages get SVG ink, no UI', async () => {
+      // the ink drawn in the previous test is in storage — the demo deck has
+      // fragments, so this exercises the clone-key re-derivation in print view
       const errs = [];
       const p2 = await ctx.newPage();
       CURPAGE = p2;
       trackErrors(p2, errs);
-      await p2.goto(SMOKE, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await p2.goto(`${BASE}/test/decks/demo.html?print-pdf`, { waitUntil: 'domcontentloaded', timeout: 60000 });
       await waitReady(p2);
-      await p2.waitForTimeout(1500);
+      await p2.waitForTimeout(2000);
       const t = await p2.evaluate(() => ({
-        slides: document.querySelectorAll('.reveal .slides > section').length,
-        toolbar: !!document.getElementById('aht-toolbar'),
-        counter: (document.getElementById('aht-slideno') || {}).textContent,
+        ui: !!document.getElementById('aht-canvas') || !!document.getElementById('aht-toolbar'),
+        pages: document.querySelectorAll('.pdf-page').length,
+        svgs: document.querySelectorAll('.aht-print-ink').length,
       }));
-      assert(t.slides > 0, 'no slides found');
-      assert(t.toolbar, 'toolbar missing');
-      assert(t.counter === `1 / ${t.slides}`, `counter=${t.counter} for ${t.slides} slides`);
-      await p2.keyboard.press('ArrowRight');
-      await p2.waitForTimeout(400);
-      const i = await p2.evaluate(() => window.Reveal.getIndices());
-      assert(i.h > 0 || i.f >= 0, 'ArrowRight did not navigate: ' + JSON.stringify(i));
-      await shot(p2, 'g9-smoke-deck');
-      const fatal = errs.filter((e) => !/tailwind|cdn.tailwindcss/i.test(e));   // runtime-CSS decks are noisy
-      assert(fatal.length === 0, fatal.join(' | '));
+      assert(!t.ui, 'plugin UI present in print view');
+      assert(t.pages > 10, 'suspiciously few pdf pages: ' + t.pages);
+      assert(t.svgs >= 1, 'no SVG ink in print view: ' + JSON.stringify(t));
+      await shot(p2, 'g9-demo-print');
+      // print view loads EVERY slide's lazy content incl. third-party iframes
+      const fatal = errs.filter((e) => !/slid\.es/i.test(e)
+        && !/^reqfail: https?:\/\/(?!127\.0\.0\.1)/.test(e));
+      assert(fatal.length === 0, fatal.join(' | ').slice(0, 300));
       await p2.close();
       CURPAGE = page;
     });
@@ -587,20 +937,63 @@ async function runSuite(browserType, label) {
   }
 }
 
-// ---------- main ----------
-let server;
-try {
-  server = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'], { cwd: ROOT, stdio: 'ignore' });
-  for (let i = 0; i < 40; i++) {
-    try { await fetch(BASE + '/'); break; } catch { await new Promise((r) => setTimeout(r, 250)); }
+// ---------- static server with reveal-version rewriting ----------
+// Serves the plugin dir; every HTML page gets its pinned reveal.js CDN version
+// replaced with the current matrix target. reveal 6 moved the plugin files
+// (plugin/<name>/<name>.js → dist/plugin/<name>.js), so paths are normalized
+// per target — fixtures may pin either style.
+let serveVersion = VERSIONS[0];
+function rewriteReveal(html, version) {
+  let out = html.replace(/reveal\.js@\d+\.\d+\.\d+/g, 'reveal.js@' + version);
+  if (/^[6-9]\./.test(version)) {
+    out = out
+      .replace(/(reveal\.js@[^"']+\/)plugin\/([a-z]+)\/\2\.js/g, '$1dist/plugin/$2.js')
+      .replace(/(reveal\.js@[^"']+\/)plugin\/(highlight\/[a-z-]+\.css)/g, '$1dist/plugin/$2');
+  } else {
+    out = out
+      .replace(/(reveal\.js@[^"']+\/)dist\/plugin\/([a-z]+)\.js/g, '$1plugin/$2/$2.js')
+      .replace(/(reveal\.js@[^"']+\/)dist\/plugin\/(highlight\/[a-z-]+\.css)/g, '$1plugin/$2');
   }
-  await runSuite(chromium, 'chromium');
-  await runSuite(webkit, 'webkit');
+  return out;
+}
+const MIME = {
+  '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
+  '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml',
+};
+const server = http.createServer((req, res) => {
+  try {
+    let p = decodeURIComponent(new URL(req.url, BASE).pathname);
+    if (p.endsWith('/')) p += 'index.html';
+    const file = path.join(PLUGIN, path.normalize(p));
+    if (!file.startsWith(PLUGIN) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+      res.writeHead(404); res.end(); return;
+    }
+    const ext = path.extname(file).toLowerCase();
+    res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'no-store');   // rewritten HTML must never leak across matrix runs
+    if (ext === '.html') res.end(rewriteReveal(fs.readFileSync(file, 'utf8'), serveVersion));
+    else res.end(fs.readFileSync(file));
+  } catch (e) {
+    res.writeHead(500); res.end();
+  }
+});
+
+// ---------- main ----------
+try {
+  await new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(PORT, '127.0.0.1', resolve);
+  });
+  for (const version of VERSIONS) {
+    serveVersion = version;
+    await runSuite(chromium, `chromium@${version}`);
+    await runSuite(webkit, `webkit@${version}`);
+  }
 } catch (e) {
   results.push({ name: `[${CUR}] FATAL (suite aborted)`, ok: false, error: String(e && e.message || e).split('\n')[0] });
   log('FATAL: ' + String(e && e.message || e).split('\n')[0]);
 } finally {
-  if (server) server.kill();
+  server.close();
 }
 
 // ---------- summary ----------

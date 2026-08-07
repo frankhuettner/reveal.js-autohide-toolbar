@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>fixture: stable keys (edited deck — slide inserted)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/theme/white.css" />
+</head>
+<body>
+<!-- fixture-keys-a.html after an edit: a NEW slide inserted at the front.
+     Same storageKey — ink saved in A must land on Beta (now index 2). -->
+<div class="reveal">
+  <div class="slides">
+    <section><h2>Inserted</h2><p>This slide did not exist when the ink was drawn.</p></section>
+    <section><h2>Alpha</h2><p>The first slide of the original deck.</p></section>
+    <section><h2>Beta</h2><p>Ink is drawn on this slide.</p></section>
+    <section><h2>Gamma</h2><p>The last slide.</p></section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.js"></script>
+<script src="../reveal-autohide-toolbar.js"></script>
+<script>
+  Reveal.initialize({
+    width: 960,
+    height: 540,
+    controls: false,
+    plugins: [ RevealAutohideToolbar ],
+    autohideToolbar: { storageKey: 'aht:test-keys' },
+  });
+</script>
+</body>
+</html>

@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>reveal.js-autohide-toolbar — demo</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.css" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/theme/white.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/theme/white.css" />
   <style>
     /* optional theming — delete this block for the plugin's defaults */
     :root { --aht-accent: #2563eb; }
@@ -20,7 +20,10 @@
       <h2>reveal.js-autohide-toolbar</h2>
       <p>Move the mouse to the <strong>bottom-left corner</strong> — the toolbar appears.</p>
       <p class="demo-hint">Press <kbd>A</kbd> (or the pen button) and draw on this slide.<br/>
-      <kbd>E</kbd> eraser · <kbd>Ctrl+Z</kbd> undo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.</p>
+      <kbd>E</kbd> eraser · <kbd>Ctrl+Z</kbd> undo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.<br/>
+      The board button inserts a blank blackboard slide (flip it to white with
+      the surface toggle); the 💾 buttons save an annotated copy of the deck or
+      export/import the ink — and <code>?print-pdf</code> prints it all.</p>
       <aside class="notes">Speaker notes work: press S or use the toolbar button.</aside>
     </section>
 
@@ -55,8 +58,8 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/plugin/notes/notes.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/notes.js"></script>
 <script src="../reveal-autohide-toolbar.js"></script>
 <script>
   Reveal.initialize({

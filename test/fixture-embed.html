@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>fixture: embedded annotations baseline</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/theme/white.css" />
+</head>
+<body>
+<div class="reveal">
+  <div class="slides">
+    <section id="one"><h2>Slide one</h2><p>Ships with baseline ink and a board.</p></section>
+    <section id="two"><h2>Slide two</h2><p>No ink here.</p></section>
+  </div>
+</div>
+
+<!-- baseline ink shipped WITH the deck: one stroke on slide one, plus a dark
+     board slide (with one white stroke) anchored after slide one -->
+<script type="application/json" data-aht-annotations>{"v":1,"strokes":{"id:one":[{"color":"#FF0000","width":6,"a":1.7778,"bw":960,"points":[{"xr":0.3,"yr":0.5},{"xr":0.5,"yr":0.5},{"xr":0.7,"yr":0.5}]}],"b:demo01":[{"color":"#FFFFFF","width":6,"a":1.7778,"bw":960,"points":[{"xr":0.3,"yr":0.4},{"xr":0.5,"yr":0.4},{"xr":0.7,"yr":0.4}]}]},"boards":[{"id":"demo01","after":"id:one","bg":"dark"}]}</script>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5.2.1/dist/reveal.js"></script>
+<script src="../reveal-autohide-toolbar.js"></script>
+<script>
+  Reveal.initialize({
+    width: 960,
+    height: 540,
+    controls: false,
+    plugins: [ RevealAutohideToolbar ],
+  });
+</script>
+</body>
+</html>
