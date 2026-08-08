@@ -3,12 +3,15 @@
  * --------------------------------------------------
  * Everything you need at the podium, in one dependency-free file:
  *   • ink annotation over slides (pen, eraser, undo, palette)
- *   • board slides: insert a blank blackboard (or whiteboard — toggle the
- *     surface) as a REAL slide after the current one; it shows in the
- *     overview, the speaker view and the PDF export, and is uncounted so the
- *     audience-visible slide numbers don't shift
+ *   • board slides: insert a blank whiteboard (or blackboard — toggle the
+ *     surface) as a REAL slide after the current one; the board keeps the
+ *     deck's slide format (surface and writable area = the slide box, like
+ *     every other slide) and shows in the overview, the speaker view and the
+ *     PDF export while staying uncounted, so the audience-visible slide
+ *     numbers don't shift
  *   • a Slidev-style auto-hiding toolbar (prev/next, overview, speaker view,
- *     fullscreen, annotate, slide counter) in the bottom-left corner
+ *     fullscreen, annotate, download/print, slide counter) in the bottom-left
+ *     corner
  *   • touch support: toolbar stays visible on no-hover devices, tap left/right
  *     half to navigate (reveal handles swipe natively)
  *   • the annotation toolbar is draggable (grip handle) and minimizable, and
@@ -16,12 +19,14 @@
  *   • ink syncs across same-origin windows via the storage event — draw in the
  *     speaker view and it shows on the audience screen, and vice versa
  *     (needs persist: true; concurrent drawing in two windows: last write wins)
- *   • saving & sharing: export/import the ink as a JSON file, or save a
- *     self-contained annotated copy of the deck (ink embedded in the HTML);
- *     a deck can ship baseline ink in a
+ *   • saving & sharing, via the toolbar's download/print menu: save a
+ *     self-contained HTML copy of the deck — clean, or with the ink embedded
+ *     and the plugin source inlined so the file opens anywhere; a deck can
+ *     ship baseline ink in a
  *     <script type="application/json" data-aht-annotations> block
- *   • PDF export: in reveal's ?print-pdf view the ink is rendered as crisp
- *     SVG overlays, and board slides print as real pages
+ *   • PDF export, from the same menu (with ink or clean): opens reveal's
+ *     ?print-pdf view in a new tab and pops the browser's print dialog —
+ *     ink is rendered as crisp SVG overlays, board slides print as real pages
  *
  * Usage — the plugin injects its own CSS and cursors, nothing else to include:
  *
@@ -51,8 +56,9 @@
  *   • disabled automatically in reveal's scroll view
  *
  * Options (Reveal.initialize({ autohideToolbar: { … } })):
- *   colors        string[]  swatch palette              (default: Office Standard Colors)
- *   defaultColor  string    initial pen colour          (default: '#FF0000')
+ *   colors        string[]  swatch palette              (default: 3 neutrals + 5 hues,
+ *                           each as an ink (Tailwind 700) / chalk (Tailwind 300) pair)
+ *   defaultColor  string    initial pen colour          (default: '#B91C1C')
  *   widths        {name:px} pen widths                  (default: {thin:3,med:6,thick:11})
  *   defaultWidth  number    initial pen width           (default: 6)
  *   eraserRadius  number    eraser hit radius (px)       (default: 16)
@@ -64,8 +70,11 @@
  *   tapToAdvance  boolean   touch tap-to-navigate        (default: true)
  *   tapIgnore     string    selector for tap targets that must NOT navigate
  *   tools         string[]  toolbar items, in order      (default below); items:
- *                           'prev','next','overview','speaker','fullscreen',
- *                           'annotate','slideno','sep'
+ *                           'prev','updown','next','overview','speaker',
+ *                           'fullscreen','annotate','export','slideno','sep' —
+ *                           'updown' is the vertical up/down arrow cluster,
+ *                           shown only on slides with a vertical route;
+ *                           'export' opens the download/print menu
  *   position      string    'bottom-left' (default) or 'bottom-right' — move the
  *                           toolbar when another plugin (e.g. reveal.js-menu)
  *                           owns the bottom-left corner
@@ -74,16 +83,20 @@
  *   palmRejection boolean   once a stylus (pointerType 'pen') is used, bare
  *                           touches no longer draw — rest your palm freely
  *                           (default true; finger drawing works until then)
+ *   boardSurface  string    surface of NEW board slides: 'white' (default)
+ *                           or 'dark' (blackboard, colour via --aht-board-bg)
  *
  * Theming (CSS custom properties, set them on :root in the host deck):
  *   --aht-accent    active-tool highlight            (default #E31937)
  *   --aht-font      toolbar font                     (default 'Open Sans', system-ui)
  *   --aht-panel-bg  navigation toolbar background    (default rgba(10,18,34,.82))
  *   --aht-bar-bg    annotation toolbar background    (default rgba(6,18,42,.92))
- *   --aht-board-bg  blackboard colour                (default #0d1b2a)
+ *   --aht-board-bg  blackboard colour                (default #000000)
+ *   --aht-edge      dashed writable-area outline     (default rgba(125,135,155,.55))
  *   --aht-z         base z-index                     (default 30)
  *
- * Keys: A annotate · E eraser · Ctrl+Z undo · X clear slide · Shift+X clear all · Esc exit
+ * Keys: A annotate · E eraser · Ctrl+Z undo · Ctrl+Shift+Z redo ·
+ *       X clear slide · Shift+X clear all · Esc exit
  *
  * Assumes a single, full-viewport deck (the common case). Not yet multi-deck /
  * embedded-safe: UI is appended to <body> and listeners are document-level.
@@ -94,11 +107,22 @@
   'use strict';
 
   const DEFAULTS = {
+    // Curated stage palette (user-tuned): three neutrals, then every hue as an
+    // INK/CHALK pair from the Tailwind ramps — ink = the 700 shade (reads on
+    // white slides, survives washed-out projectors), chalk = the 300 shade
+    // (reads on dark boards even when a projector lifts their black to gray).
+    // Verified against a projector simulation (contrast/saturation compression
+    // + 40% room light): darker calm shades gain little on white but the 300s
+    // beat brighter "stage" colours on the gray-washed board by a wide margin.
     colors: [
-      '#FFFFFF', '#000000', '#C00000', '#FF0000', '#FFC000', '#FFFF00',
-      '#92D050', '#00B050', '#00B0F0', '#0070C0', '#002060', '#7030A0',
+      '#FFFFFF', '#8E8E93', '#000000',   // neutrals: white, gray, black
+      '#B91C1C', '#FCA5A5',              // red:    ink | chalk
+      '#B45309', '#FCD34D',              // amber:  ink | chalk
+      '#15803D', '#86EFAC',              // green:  ink | chalk
+      '#1D4ED8', '#93C5FD',              // blue:   ink | chalk
+      '#7E22CE', '#D8B4FE',              // purple: ink | chalk
     ],
-    defaultColor: '#FF0000',
+    defaultColor: '#B91C1C',
     widths: { thin: 3, med: 6, thick: 11 },
     defaultWidth: 6,
     eraserRadius: 16,
@@ -107,10 +131,11 @@
     annotations: true,
     tapToAdvance: true,
     tapIgnore: 'a, button, input, textarea, select, video, audio, iframe, summary, [contenteditable], [data-aht-no-tap]',
-    tools: ['prev', 'next', 'sep', 'overview', 'speaker', 'fullscreen', 'sep', 'annotate', 'slideno'],
+    tools: ['prev', 'updown', 'next', 'sep', 'overview', 'speaker', 'fullscreen', 'sep', 'annotate', 'export', 'slideno'],
     position: 'bottom-left',
     toggleKey: 'a',
     palmRejection: true,   // once a stylus is used, bare-touch input no longer draws
+    boardSurface: 'white', // new board slides start white; 'dark' for blackboards
   };
 
   // ---------- shared icon path data (lucide) ----------
@@ -134,8 +159,18 @@
 
   const CSS = `
 #aht-canvas { position: fixed; z-index: var(--aht-z, 30); pointer-events: none; touch-action: none; background: transparent; }
-#aht-canvas.active { pointer-events: auto; cursor: ${cur(cursorSvg(PEN_D, '#FFC000'))} 2 22, crosshair; }
+#aht-canvas.active { pointer-events: auto; cursor: ${cur(cursorSvg(PEN_D, '#FCD34D'))} 2 22, crosshair; }
+/* while annotating, a subtle dashed outline shows WHERE ink can go (the slide
+   box) — the deck's letterbox margins are otherwise invisible on a plain
+   background. Boards share the same box, so the outline applies there too. */
+#aht-canvas.active { outline: 2px dashed var(--aht-edge, rgba(125, 135, 155, .55)); outline-offset: -2px; }
 #aht-canvas.active.erasing { cursor: ${cur(cursorSvg(ERASER_D, '#F4A3A3'))} 6 20, cell; }
+
+/* board slides keep the deck's slide format: the SECTION is the surface,
+   filling the slide box exactly (reveal makes sections width:100% already) */
+.reveal .slides section[data-aht-board] { height: 100%; }
+.reveal .slides section[data-aht-surface="white"] { background-color: #FFFFFF; }
+.reveal .slides section[data-aht-surface="dark"] { background-color: var(--aht-board-bg, #000000); }
 
 #aht-toolbar {
   position: fixed; left: 14px; bottom: 12px; z-index: calc(var(--aht-z, 30) + 30);
@@ -156,6 +191,16 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 .aht-btn:hover { background: rgba(255,255,255,.14); }
 .aht-btn svg { width: 18px; height: 18px; display: block; }
 .aht-btn[hidden] { display: none; }
+/* the download/print button is double width: two symbols, one action (menu) */
+#aht-export { width: 56px; gap: 3px; }
+.aht-btn.dim { opacity: .3; pointer-events: none; }
+/* vertical up/down cluster: two half-height arrows stacked between prev/next,
+   like the arrow keys on a laptop keyboard — only shown for decks that
+   actually use vertical slides */
+.aht-updown { display: flex; flex-direction: column; gap: 2px; }
+.aht-updown[hidden] { display: none; }
+.aht-updown .aht-btn { width: 24px; height: 15px; border-radius: 5px; }
+.aht-updown .aht-btn svg { width: 12px; height: 12px; }
 #aht-slideno { color: #aeb8cc; font: 600 12px/1 var(--aht-font, 'Open Sans', system-ui, sans-serif); padding: 0 6px 0 4px; white-space: nowrap; user-select: none; }
 
 #aht-bar {
@@ -214,6 +259,31 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 #aht-confirm .aht-ok { background: var(--aht-accent, #E31937); color: #fff; }
 #aht-confirm .aht-cancel { background: rgba(255,255,255,.14); color: #e7ecf5; }
 
+#aht-export-wrap { position: fixed; inset: 0; z-index: calc(var(--aht-z, 30) + 40); }
+#aht-export-menu {
+  position: absolute; display: flex; flex-direction: column; gap: 2px;
+  background: var(--aht-bar-bg, rgba(6,18,42,.92)); color: #e7ecf5;
+  border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  padding: 8px; width: -webkit-max-content; width: max-content;
+  max-width: calc(100vw - 16px); box-sizing: border-box;
+}
+#aht-export-menu .aht-export-item {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  border: none; background: transparent; color: #e7ecf5; cursor: pointer;
+  border-radius: 8px; padding: 7px 10px;
+  font: 600 13px/1.3 var(--aht-font, 'Open Sans', system-ui, sans-serif);
+}
+#aht-export-menu .aht-export-item:hover { background: rgba(255,255,255,.14); }
+#aht-export-menu .aht-export-item svg { width: 18px; height: 18px; flex: none; }
+#aht-export-menu .aht-export-item small {
+  display: block; color: #aeb8cc;
+  font: 400 11px/1.3 var(--aht-font, 'Open Sans', system-ui, sans-serif);
+}
+#aht-export-menu .aht-export-hint {
+  color: #8fa0bb; max-width: 230px; padding: 4px 10px 2px;
+  font: 400 11px/1.4 var(--aht-font, 'Open Sans', system-ui, sans-serif);
+}
+
 /* while annotating, nothing on the page may be text-selected — prevents iOS
    long-press selection callouts (Copy | Find Selection) under the palm */
 body.aht-noselect, body.aht-noselect * {
@@ -221,20 +291,21 @@ body.aht-noselect, body.aht-noselect * {
   -webkit-touch-callout: none !important;
 }
 
-@media print { #aht-canvas, #aht-toolbar, #aht-bar { display: none !important; } }
+@media print { #aht-canvas, #aht-toolbar, #aht-bar, #aht-export-wrap { display: none !important; } }
 `;
 
   // ---------- state ----------
   let cfg;
   const state = {
     Reveal: null, on: false, overview: false, tool: 'pen', color: null, width: 0,
-    strokes: {}, boards: [], undo: {}, drawing: false, cur: null, pid: null,
+    strokes: {}, boards: [], undo: {}, redo: {}, drawing: false, cur: null, pid: null,
   };
-  let canvas, ctx, bar, launch, slideNoEl, toolsEl, slidesEl, fileInput;
+  let canvas, ctx, bar, launch, slideNoEl, toolsEl, slidesEl;
   let rect = null;            // slide box in CSS px — updated in place() / on pen-down
   let zone = null;            // toolbar hover-wake zone, derived from the toolbar's rect
   let chromeTimer = null, layoutTimer = null, noHover = false, tap = null;
   let confirmEl = null;       // the open confirmation dialog, if any
+  let exportEl = null;        // the open download/print menu, if any
   let boardAuto = false;      // annotation was auto-enabled by entering a board slide
 
   // ---------- stable slide keys ----------
@@ -319,6 +390,8 @@ body.aht-noselect, body.aht-noselect * {
   };
 
   function place() {
+    // ink overlays the slide box — on normal slides AND boards alike: boards
+    // keep the deck's slide format, so the writable area never changes shape
     rect = slidesEl.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
     canvas.style.left = rect.left + 'px'; canvas.style.top = rect.top + 'px';
@@ -329,6 +402,9 @@ body.aht-noselect, body.aht-noselect * {
     redraw();
   }
   function redraw() {
+    // pre-'ready' adoption (late embed read, storage event) may land before
+    // the first place(): nothing to paint yet — 'ready' → place() → redraw()
+    if (!rect) return;
     ctx.clearRect(0, 0, rect.width, rect.height);
     for (const st of (state.strokes[curKey()] || [])) drawStroke(st);
   }
@@ -360,12 +436,17 @@ body.aht-noselect, body.aht-noselect * {
     const id = curKey();
     (state.undo[id] = state.undo[id] || []).push((state.strokes[id] || []).slice());
     if (state.undo[id].length > 100) state.undo[id].shift();
+    state.redo[id] = [];   // a new action invalidates the redo branch
   }
-  function undo() {
-    const id = curKey(), stack = state.undo[id];
+  // undo and redo are the same move with the two stacks swapped
+  function shiftStack(from, to) {
+    const id = curKey(), stack = from[id];
     if (!stack || !stack.length) return;
+    (to[id] = to[id] || []).push((state.strokes[id] || []).slice());
     state.strokes[id] = stack.pop(); redraw(); save();
   }
+  const undo = () => shiftStack(state.undo, state.redo);
+  const redo = () => shiftStack(state.redo, state.undo);
   const envelope = () => ({ v: 1, strokes: state.strokes, boards: state.boards });
   function save() { if (!cfg.persist) return; try { localStorage.setItem(cfg.storageKey, JSON.stringify(envelope())); } catch (e) {} }
   // Accepts the v1 envelope or the legacy bare strokes map ('h-v' index keys,
@@ -374,7 +455,15 @@ body.aht-noselect, body.aht-noselect * {
     try {
       const d = JSON.parse(raw);
       if (!d || typeof d !== 'object') return null;
-      if (d.v === 1) return { strokes: d.strokes || {}, boards: Array.isArray(d.boards) ? d.boards : [] };
+      if (d.v === 1) {
+        // boards may come from a hand-edited envelope: drop junk entries (a
+        // throw here would discard the WHOLE envelope, strokes included) and
+        // pin bg so everything downstream (boardSection, toggleSurface) can
+        // trust it
+        const boards = (Array.isArray(d.boards) ? d.boards : []).filter((b) => b && typeof b === 'object');
+        boards.forEach((b) => { b.bg = b.bg === 'white' ? 'white' : 'dark'; });
+        return { strokes: d.strokes || {}, boards: boards };
+      }
       return { strokes: migrateIndexKeys(d), boards: [] };
     } catch (e) { return null; }
   }
@@ -391,23 +480,37 @@ body.aht-noselect, body.aht-noselect * {
     }
     return out;
   }
+  // the one name every encoding of the embedded block shares: the DOM reader
+  // below, and the source matcher + builder in saveCopy
+  const EMBED_ATTR = 'data-aht-annotations';
   function readEmbedded() {
-    const n = document.querySelector('script[type="application/json"][data-aht-annotations]');
+    const n = document.querySelector('script[type="application/json"][' + EMBED_ATTR + ']');
     if (!n) return null;
     return parseEnvelope(n.textContent);
   }
-  function load() {
+  function load(onLate) {
     if (!cfg.annotations) return;   // present clean: start empty, touch nothing
     let env = null;
     if (cfg.persist) { try { const s = localStorage.getItem(cfg.storageKey); if (s) env = parseEnvelope(s); } catch (e) {} }
     // no local state (not even a cleared-empty one) → adopt the deck's baseline
     if (!env) env = readEmbedded();
     if (env) { state.strokes = env.strokes || {}; state.boards = env.boards || []; }
+    else if (onLate && document.readyState === 'loading') {
+      // a saved copy appends its annotations block just before </body> —
+      // BEHIND the script that runs Reveal.initialize(), and plugin init
+      // happens in its microtasks, before the parser reaches the block.
+      // Re-read once the document is complete; the caller adopts it late.
+      listen(document, 'DOMContentLoaded', () => {
+        const late = readEmbedded();
+        if (late) onLate(late);
+      }, { once: true });
+    }
   }
 
   // ---------- pointer drawing ----------
   const xy = (e) => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   let penSeen = false;   // once a stylus is used, bare-touch input stops drawing (palm rejection)
+  let eraseSnapped = false;   // one undo snapshot per erase gesture, taken at the first hit
   function onDown(e) {
     if (!state.on) return;
     e.preventDefault();
@@ -420,8 +523,8 @@ body.aht-noselect, body.aht-noselect * {
     state.pid = e.pointerId;
     rect = canvas.getBoundingClientRect();   // refresh once per gesture (zoom-safe)
     const p = xy(e);
-    pushUndo();
-    if (state.tool === 'eraser') { state.drawing = 'erase'; eraseAt(p); return; }
+    if (state.tool === 'eraser') { state.drawing = 'erase'; eraseSnapped = false; eraseAt(p); return; }
+    pushUndo();   // the pen always commits at least a dot — snapshot up front
     state.drawing = 'pen';
     state.cur = { color: state.color, width: state.width, a: aspect(), bw: Math.round(rect.width), points: [toRatio(p)] };
     const id = curKey();
@@ -459,7 +562,12 @@ body.aht-noselect, body.aht-noselect * {
       }
       if (hit) changed = true; else keep.push(st);
     }
-    if (changed) { state.strokes[id] = keep; redraw(); }   // saved once, on gesture end (onUp)
+    if (changed) {
+      // snapshot only when something is actually erased — a miss gesture must
+      // not wipe the redo branch (pushUndo clears it)
+      if (!eraseSnapped) { pushUndo(); eraseSnapped = true; }
+      state.strokes[id] = keep; redraw();   // saved once, on gesture end (onUp)
+    }
   }
 
   // ---------- DOM + icons ----------
@@ -475,7 +583,11 @@ body.aht-noselect, body.aht-noselect * {
     pen: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}>${paths(PEN_D)}</svg>`,
     eraser: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}>${paths(ERASER_D)}</svg>`,
     undo: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
-    trash: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+    redo: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>`,
+    // lucide brush-cleaning: sweep this slide clean; with a sparkle on top it
+    // means "sweep the whole deck"
+    clean: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="m16 22-1-4"/><path d="M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1"/><path d="M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z"/><path d="m8 22 1-4"/></svg>`,
+    cleanAll: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="m16 22-1-4"/><path d="M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1"/><path d="M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z"/><path d="m8 22 1-4"/><path d="M20 2v4"/><path d="M22 4h-4"/></svg>`,
     x: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
     maximize: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`,
     minimize: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`,
@@ -486,11 +598,20 @@ body.aht-noselect, body.aht-noselect * {
     grip: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>`,
     chevDown: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="m6 9 6 6 6-6"/></svg>`,
     chevUp: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="m18 15-6-6-6 6"/></svg>`,
-    board: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><rect x="2.5" y="4" width="19" height="14.5" rx="2" fill="#C79A5B"/><rect x="4.3" y="5.8" width="15.4" height="10.9" rx="1" fill="#2E7D52"/><path d="M6.6 12.1c1.6-1.3 3.2-1.3 4.8 0" stroke="#EFF6EA" stroke-width="1.3" stroke-linecap="round"/></svg>`,
+    // board icons follow lucide conventions: a plus to insert, the diagonal
+    // "-off" slash to remove (shown while ON a board slide)
+    board: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M12 8v6"/><path d="M9 11h6"/></svg>`,
+    boardOff: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m3 3 18 16"/></svg>`,
     contrast: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><circle cx="12" cy="12" r="10"/><path d="M12 18a6 6 0 0 0 0-12v12z" fill="currentColor"/></svg>`,
-    save: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>`,
-    download: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>`,
-    upload: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>`,
+    // save with ink (lucide save-pen) vs a plain clean copy (lucide save)
+    save: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h10.2a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4v.3"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/><path d="M13.33 13H8a1 1 0 0 0-1 1v7"/><path d="M14.363 17.634a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506l4.013-4.009a1 1 0 1 0-3.004-3.004z"/></svg>`,
+    saveClean: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>`,
+    // lucide printer, and two composites after the printer-check pattern:
+    // printer + pen (print WITH ink) and printer + down arrow (the toolbar's
+    // download/print button)
+    print: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>`,
+    printInk: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><path d="M11 22H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h6"/><path d="M14.363 17.634a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506l4.013-4.009a1 1 0 1 0-3.004-3.004z"/></svg>`,
+    download: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>`,
   };
   function btn(attrs, icon, onclick) {
     const b = el('button', attrs, icon);
@@ -510,12 +631,24 @@ body.aht-noselect, body.aht-noselect * {
 
     let fsBtn = null;
     const mk = {
-      prev: () => deckBtn('Previous (←)', ICONS.prev, () => R.prev()),
-      next: () => deckBtn('Next (→)', ICONS.next, () => R.next()),
+      // ◀/▶ behave like the cursor keys: fragments, then horizontal — vertical
+      // stacks are entered deliberately via the ▲/▼ cluster, never implicitly
+      prev: () => deckBtn('Previous (←)', ICONS.prev, () => (R.left ? R.left() : R.prev())),
+      next: () => deckBtn('Next (→)', ICONS.next, () => (R.right ? R.right() : R.next())),
+      updown: () => {
+        const wrap = el('span', { id: 'aht-updown', class: 'aht-updown', hidden: '' });
+        wrap.appendChild(btn({ id: 'aht-up', class: 'aht-btn', title: 'Up (↑)' }, ICONS.chevUp, () => R.up()));
+        wrap.appendChild(btn({ id: 'aht-down', class: 'aht-btn', title: 'Down (↓)' }, ICONS.chevDown, () => R.down()));
+        return wrap;
+      },
       overview: () => deckBtn('Slide overview (O / Esc)', ICONS.grid, () => R.toggleOverview()),
       speaker: () => deckBtn('Speaker view (S)', ICONS.notes, openNotes),
       fullscreen: () => (fsBtn = deckBtn('Fullscreen (F)', ICONS.maximize, toggleFullscreen)),
       annotate: () => launch,
+      // one place for everything that leaves the browser: HTML copies and
+      // PDF/print — opens its own menu, like the pen opens the annotation bar.
+      // One double-width button showing both symbols: printer | download.
+      export: () => btn({ id: 'aht-export', class: 'aht-btn', title: 'Download or print this deck' }, ICONS.print + ICONS.download, exportMenu),
     };
     cfg.tools.forEach((name) => {
       if (name === 'sep') toolsEl.appendChild(sep());
@@ -557,19 +690,15 @@ body.aht-noselect, body.aht-noselect * {
       applyBarPos(); saveUI();
     });
 
-    fileInput = el('input', { type: 'file', accept: '.json,application/json', hidden: '' });
-    fileInput.onchange = onImportFile;
-
-    [grip, penBtn, eraBtn, sep(), swatches, sep(), widths, sep(),
+    [grip, penBtn, eraBtn,
       btn({ title: 'Undo (Ctrl+Z)' }, ICONS.undo, undo),
+      btn({ id: 'aht-redo', title: 'Redo (Ctrl+Shift+Z)' }, ICONS.redo, redo),
+      btn({ id: 'aht-clear', title: 'Clear all ink on this slide (X)' }, ICONS.clean, clearSlide),
+      sep(), swatches, sep(), widths, sep(),
       btn({ id: 'aht-board', title: 'Insert board slide' }, ICONS.board, () => (onBoard() ? removeBoardConfirmed() : addBoard())),
       btn({ id: 'aht-surface', title: 'Board surface: dark / white', hidden: '' }, ICONS.contrast, toggleSurface),
-      btn({ title: 'Clear this slide (X) · Shift = all slides' }, ICONS.trash, (ev) => (ev.shiftKey ? clearAllConfirmed() : clearSlide())),
       sep(),
-      btn({ id: 'aht-savecopy', title: 'Save annotated copy of this deck (HTML)' }, ICONS.save, saveCopy),
-      btn({ id: 'aht-export', title: 'Export ink (JSON)' }, ICONS.download, exportJSON),
-      btn({ id: 'aht-import', title: 'Import ink (JSON)' }, ICONS.upload, () => fileInput.click()),
-      fileInput,
+      btn({ id: 'aht-clearall', title: 'Delete all ink and board slides (Shift+X)' }, ICONS.cleanAll, clearAllConfirmed),
       sep(),
       minBtn,
       btn({ title: 'Exit annotation (A / Esc)' }, ICONS.x, () => enable(false)),
@@ -598,6 +727,50 @@ body.aht-noselect, body.aht-noselect * {
     confirmEl = wrap;
   }
   function closeConfirm() { if (confirmEl) { confirmEl.remove(); confirmEl = null; } }
+
+  // the print handshake: openPrint() writes these URL params, readCfg() and
+  // initPrint() match them via these shared regexes — one contract, one place
+  const RE_PRINT = /[?&]aht-print=1/, RE_NOINK = /[?&]aht-ink=0/;
+
+  // ---------- download / print menu ----------
+  // Anchored above the toolbar's export button. Esc or a click anywhere
+  // outside (including the button itself) closes it.
+  function exportMenu() {
+    if (exportEl) return closeExport();
+    const wrap = el('div', { id: 'aht-export-wrap' });
+    const box = el('div', { id: 'aht-export-menu' });
+    const item = (icon, label, hint, fn) => btn({ class: 'aht-export-item' },
+      icon + '<span>' + label + '<small>' + hint + '</small></span>',
+      () => { closeExport(); fn(); });
+    box.appendChild(item(ICONS.saveClean, 'Save a copy', 'single HTML file, no ink', () => saveCopy(false)));
+    if (cfg.annotations) {
+      box.appendChild(item(ICONS.save, 'Save annotated copy', 'ink &amp; boards embedded', () => saveCopy(true)));
+      box.appendChild(item(ICONS.printInk, 'PDF / print with ink', 'opens the browser’s print dialog', () => openPrint(true)));
+    }
+    box.appendChild(item(ICONS.print, 'PDF / print clean', 'slides only', () => openPrint(false)));
+    box.appendChild(el('div', { class: 'aht-export-hint' },
+      'PDF: choose “Save as PDF” in the dialog and enable background graphics.'));
+    wrap.appendChild(box);
+    wrap.addEventListener('pointerdown', (e) => { if (e.target === wrap) closeExport(); });
+    document.body.appendChild(wrap);
+    const r = toolsEl.querySelector('#aht-export').getBoundingClientRect();
+    box.style.left = Math.min(Math.max(8, r.left - 8), window.innerWidth - box.offsetWidth - 8) + 'px';
+    box.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    exportEl = wrap;
+  }
+  function closeExport() { if (exportEl) { exportEl.remove(); exportEl = null; } }
+  // Open reveal's print view in a NEW tab (the live talk keeps running
+  // untouched) with aht-print=1: there the plugin pops the browser's print
+  // dialog once the layout is ready — "Save as PDF" is all that's left to do.
+  function openPrint(withInk) {
+    const u = new URL(location.href);
+    u.searchParams.set('print-pdf', '');
+    u.searchParams.set('aht-print', '1');
+    if (withInk === false) u.searchParams.set('aht-ink', '0');
+    else u.searchParams.delete('aht-ink');
+    u.hash = '';
+    window.open(u.href, '_blank');
+  }
 
   // ---------- annotation-bar position: draggable + minimizable ----------
   let barPos = null;   // { x, y, min } — persisted per deck under storageKey + ':ui'
@@ -641,7 +814,13 @@ body.aht-noselect, body.aht-noselect * {
     if (!bar) return;
     const isB = onBoard();
     const bb = bar.querySelector('#aht-board');
-    if (bb) { bb.classList.toggle('active', isB); bb.title = isB ? 'Remove this board slide' : 'Insert board slide'; }
+    const mode = isB ? 'remove' : 'add';
+    if (bb && bb.dataset.mode !== mode) {   // mode doubles as the no-rework memo
+      bb.dataset.mode = mode;
+      bb.classList.toggle('active', isB);
+      bb.innerHTML = isB ? ICONS.boardOff : ICONS.board;
+      bb.title = isB ? 'Remove this board slide' : 'Insert board slide';
+    }
     const sb = bar.querySelector('#aht-surface');
     if (sb) sb.hidden = !isB;
   }
@@ -667,14 +846,17 @@ body.aht-noselect, body.aht-noselect * {
   function setTool(t) { state.tool = t; canvas.classList.toggle('erasing', t === 'eraser'); syncUI(); }
   function setColor(c) { state.color = c; setTool('pen'); }
   function setWidth(w) { state.width = w; syncUI(); }
-  function clearSlide() { pushUndo(); state.strokes[curKey()] = []; redraw(); save(); }
+  function clearSlide() {
+    if (!(state.strokes[curKey()] || []).length) return;   // a no-op must not wipe the redo branch
+    pushUndo(); state.strokes[curKey()] = []; redraw(); save();
+  }
   // clearAll wipes ink AND board slides and writes an EMPTY envelope (not
   // removeItem): the empty local state doubles as the tombstone that keeps a
   // deck-embedded baseline from resurrecting on the next load.
   function clearAll() {
     const cur = state.Reveal.getCurrentSlide();
     if (boardIdOf(cur)) state.Reveal.slide(Math.max(0, state.Reveal.getIndices().h - 1));
-    state.strokes = {}; state.undo = {};
+    state.strokes = {}; state.undo = {}; state.redo = {};
     const had = state.boards.length;
     state.boards = [];
     slidesEl.querySelectorAll('[data-aht-board]').forEach((s) => s.remove());
@@ -689,15 +871,14 @@ body.aht-noselect, body.aht-noselect * {
   // keeps reveal's slide numbers stable for the audience. Boards are persisted
   // (id, anchor slide's stable key, surface) and re-inserted on load.
   const genId = () => Math.random().toString(36).slice(2, 8);
-  function boardBg() {
-    const v = getComputedStyle(document.documentElement).getPropertyValue('--aht-board-bg').trim();
-    return v || '#0d1b2a';
-  }
+  // the surface is painted on the SECTION via the [data-aht-surface] CSS above
+  // (not data-background-color: reveal paints those across the whole viewport,
+  // but a board keeps the deck's slide format)
   function boardSection(b) {
     const s = el('section', {
       'data-aht-board': b.id,
       'data-visibility': 'uncounted',
-      'data-background-color': b.bg === 'white' ? '#FFFFFF' : boardBg(),
+      'data-aht-surface': b.bg,
     });
     keyCache.set(s, 'b:' + b.id);
     return s;
@@ -729,7 +910,7 @@ body.aht-noselect, body.aht-noselect * {
     const cur = state.Reveal.getCurrentSlide();
     if (!cur) return;
     const curBoard = boardIdOf(cur);
-    const b = { id: genId(), after: curBoard ? boardById(curBoard).after : curKey(), bg: 'dark' };
+    const b = { id: genId(), after: curBoard ? boardById(curBoard).after : curKey(), bg: cfg.boardSurface === 'dark' ? 'dark' : 'white' };
     let at;
     if (curBoard) at = state.boards.findIndex((x) => x.id === curBoard) + 1;
     else { at = state.boards.findIndex((x) => x.after === b.after); if (at < 0) at = state.boards.length; }
@@ -750,6 +931,7 @@ body.aht-noselect, body.aht-noselect * {
     if (i >= 0) state.boards.splice(i, 1);
     delete state.strokes['b:' + id];
     delete state.undo['b:' + id];
+    delete state.redo['b:' + id];
     state.Reveal.slide(Math.max(0, state.Reveal.getIndices().h - 1));
     cur.remove();
     state.Reveal.sync();
@@ -761,8 +943,7 @@ body.aht-noselect, body.aht-noselect * {
     if (!b) return;
     b.bg = b.bg === 'white' ? 'dark' : 'white';
     const sec = slidesEl.querySelector('[data-aht-board="' + b.id + '"]');
-    sec.setAttribute('data-background-color', b.bg === 'white' ? '#FFFFFF' : boardBg());
-    if (state.Reveal.syncSlide) state.Reveal.syncSlide(sec); else state.Reveal.sync();
+    sec.setAttribute('data-aht-surface', b.bg);
     ensureContrast();
     save();
   }
@@ -790,25 +971,16 @@ body.aht-noselect, body.aht-noselect * {
   function deckName() {
     return (location.pathname.split('/').pop() || '').replace(/\.[^.]*$/, '') || 'deck';
   }
+  // JSON download is not a user-facing feature (the annotated HTML copy is the
+  // shareable form) — it only remains as saveCopy's fallback on file://
   function exportJSON() { download(deckName() + '-annotations.json', JSON.stringify(envelope(), null, 1), 'application/json'); }
-  function onImportFile() {
-    const f = fileInput.files && fileInput.files[0];
-    fileInput.value = '';
-    if (!f) return;
-    f.text().then((t) => {
-      const env = parseEnvelope(t);
-      if (!env) return;
-      const hasInk = state.boards.length || Object.keys(state.strokes).some((k) => (state.strokes[k] || []).length);
-      if (hasInk) confirmBox('Replace all current ink and board slides with the imported file?', 'Replace', () => adoptEnvelope(env, true));
-      else adoptEnvelope(env, true);
-    });
-  }
-  // Adopt a full annotation state (import, or another window via the storage
-  // event): swap strokes, reconcile board sections, redraw.
+  // Adopt a full annotation state (another window via the storage event):
+  // swap strokes, reconcile board sections, redraw.
   function adoptEnvelope(env, persistIt) {
+    if (state.drawing) return;   // never swap strokes out from under an in-flight stroke
     const sameBoards = JSON.stringify(state.boards) === JSON.stringify(env.boards || []);
     state.strokes = env.strokes || {};
-    state.undo = {};
+    state.undo = {}; state.redo = {};
     if (!sameBoards) {
       const curId = boardIdOf(state.Reveal.getCurrentSlide());
       if (curId && !(env.boards || []).some((b) => b.id === curId)) {
@@ -822,31 +994,89 @@ body.aht-noselect, body.aht-noselect * {
     redraw(); updateSlideNo(); syncBoardUI(); ensureContrast();
     if (persistIt) save();
   }
-  // "Save annotated copy": fetch this deck's own HTML source, splice the ink in
-  // as an embedded block, download the result — a single self-contained file.
-  // The SOURCE is modified, not the live DOM, so no plugin UI leaks into it.
-  function saveCopy() {
-    fetch(location.href, { cache: 'no-store' })
-      .then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); })
-      .then((src) => {
-        const json = JSON.stringify(envelope()).replace(/<\//g, '<\\/');
-        const block = '<script type="application/json" data-aht-annotations>' + json + '<' + '/script>';
-        let out = src.replace(/<script[^>]*data-aht-annotations[^>]*>[\s\S]*?<\/script>/i, block);
-        if (out === src) {
-          const i = out.toLowerCase().lastIndexOf('</body>');
-          out = i >= 0 ? out.slice(0, i) + block + '\n' + out.slice(i) : out + '\n' + block;
+  // "Save a copy": fetch this deck's own HTML source and download it as a
+  // single self-contained file — with the ink spliced in as an embedded block
+  // (withInk, the default), or with any embedded block stripped (a clean,
+  // shareable deck). The SOURCE is modified, not the live DOM, so no plugin UI
+  // (and no runtime board section) leaks into it.
+  // The plugin's own <script src> is replaced by an INLINE copy of its source:
+  // a deck that loaded the plugin via a relative path would otherwise open as
+  // a blank page when the downloaded file is opened from another directory.
+  // (reveal itself should be loaded from absolute/CDN URLs to make the copy
+  // portable — relative reveal assets can't travel with a single file.)
+  function saveCopy(withInk) {
+    const ink = withInk !== false;
+    // module builds keep their tag untouched: inlining an ES module into a
+    // classic <script> would throw on its import/export statements
+    const tag = document.querySelector('script[src*="reveal-autohide-toolbar"]:not([type="module"])');
+    Promise.all([
+      fetch(location.href, { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }),
+      tag ? fetch(tag.src, { cache: 'no-store' }).then((r) => (r.ok ? r.text() : null)).catch(() => null) : null,
+    ])
+      .then(([src, pluginJs]) => {
+        // the embedded annotations block as it appears in HTML source (the DOM
+        // twin of this concept lives in readEmbedded, sharing EMBED_ATTR)
+        const blockRe = new RegExp('\\s*<script[^>]*' + EMBED_ATTR + '[^>]*>[\\s\\S]*?<\\/script>', 'i');
+        let out;
+        if (ink) {
+          const json = JSON.stringify(envelope()).replace(/<\//g, '<\\/');
+          // split tags so this source, when inlined into a copy, never contains
+          // a literal annotations-block tag itself
+          const block = '<' + 'script type="application/json" ' + EMBED_ATTR + '>' + json + '<' + '/script>';
+          // function replacement: stroke keys ('id:' + section id) and colors
+          // are author data — a string replacement would expand $-patterns
+          // ($&, $', …) in them and corrupt the copy
+          // replace-vs-append is decided by an explicit test — comparing the
+          // replace output to the input would misread a byte-identical re-save
+          // as "no block found" and append a duplicate
+          if (blockRe.test(src)) {
+            out = src.replace(blockRe, () => '\n' + block);
+          } else {
+            const i = src.toLowerCase().lastIndexOf('</body>');
+            out = i >= 0 ? src.slice(0, i) + block + '\n' + src.slice(i) : src + '\n' + block;
+          }
+        } else {
+          // the clean copy also sheds any block a previous save embedded
+          out = src.replace(blockRe, '');
         }
-        download(deckName() + '-annotated.html', out, 'text/html');
+        if (pluginJs) {
+          // shed the long doc header (it also contains an example plugin
+          // <script src> tag, which must not survive into a self-contained
+          // copy); a one-line banner keeps the licence notice
+          const banner = '/* reveal.js-autohide-toolbar (inlined by "Save a copy") · MIT · '
+            + 'https://github.com/frankhuettner/reveal.js-autohide-toolbar */\n';
+          const compact = pluginJs.replace(/^\/\*[\s\S]*?\*\/\s*/, banner);
+          // '</script' may only occur in comments/strings of the source; escape
+          // it so the HTML parser can't end the inline block early
+          const inlined = '<script>' + compact
+            .replace(/<\/script/gi, '<\\/script')
+            // …and no literal openers either, so blockRe on a future re-save
+            // can never match INTO the inlined source ('\x73' is 's' in JS
+            // strings and regexes — values are preserved, only the HTML changes)
+            .replace(/<script/gi, '<\\x73cript') + '<' + '/script>';
+          out = out.replace(/<script[^>]*src=["'][^"']*reveal-autohide-toolbar[^"']*["'][^>]*>\s*<\/script>/i, () => inlined);
+        }
+        download(deckName() + (ink ? '-annotated.html' : '-copy.html'), out, 'text/html');
       })
-      .catch(() => exportJSON());   // file:// etc. — at least save the ink itself
+      .catch(() => {
+        if (ink) exportJSON();   // file:// etc. — at least save the ink itself
+        else console.warn('autohide-toolbar: cannot fetch the deck source here (file://?) — "Save a copy" needs http(s).');
+      });
   }
 
   // ---------- keyboard ----------
   function onKey(e) {
-    if (confirmEl && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeConfirm(); return; }
+    if ((confirmEl || exportEl) && e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      closeConfirm(); closeExport();   // both null-safe; at most one is open
+      return;
+    }
     if (state.Reveal.getConfig().keyboard === false) return;   // respect the deck's keyboard setting
     if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { if (state.on) { e.preventDefault(); undo(); } return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      if (state.on) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === cfg.toggleKey) { e.preventDefault(); enable(!state.on); }
@@ -872,7 +1102,13 @@ body.aht-noselect, body.aht-noselect * {
       chromeTimer = setTimeout(() => { chromeTimer = null; setChrome(false); }, 400);
     }
   }
-  function onTapDown(e) { tap = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, t: e.timeStamp } : null; }
+  function onTapDown(e) {
+    // while a dialog or the export menu is up, a tap serves only that layer —
+    // it must never navigate the deck behind it. This handler runs in CAPTURE
+    // phase, i.e. BEFORE the overlay's own outside-tap close removes the layer.
+    if (confirmEl || exportEl) { tap = null; return; }
+    tap = e.pointerType === 'touch' ? { x: e.clientX, y: e.clientY, t: e.timeStamp } : null;
+  }
   function onTapUp(e) {
     if (!tap || e.pointerType !== 'touch') return;
     const dx = Math.abs(e.clientX - tap.x), dy = Math.abs(e.clientY - tap.y), dt = e.timeStamp - tap.t;
@@ -888,13 +1124,26 @@ body.aht-noselect, body.aht-noselect * {
   function initChrome() {
     noHover = window.matchMedia('(hover: none)').matches;
     if (cfg.tapToAdvance) {
-      listen(document, 'pointerdown', onTapDown, { passive: true });
+      listen(document, 'pointerdown', onTapDown, { passive: true, capture: true });
       listen(document, 'pointerup', onTapUp, { passive: true });
     }
     if (noHover) { setChrome(true); return; }        // touch: keep the toolbar visible
     listen(document, 'mousemove', onMoveChrome, { passive: true });
     setChrome(true);                                  // brief reveal on load for discoverability
     chromeTimer = setTimeout(() => { chromeTimer = null; setChrome(false); }, 2200);
+  }
+
+  // the ▲/▼ cluster only appears where it means something: on slides that
+  // actually have a vertical route. Elsewhere it is gone, not greyed out.
+  function syncNav() {
+    const ud = toolsEl && toolsEl.querySelector('#aht-updown');
+    if (!ud) return;
+    const r = state.Reveal.availableRoutes ? state.Reveal.availableRoutes() : null;
+    const show = !!(r && (r.up || r.down));
+    ud.hidden = !show;
+    if (!show) return;
+    ud.querySelector('#aht-up').classList.toggle('dim', !r.up);
+    ud.querySelector('#aht-down').classList.toggle('dim', !r.down);
   }
 
   // counted position/total, computed over the deck's own slides — board slides
@@ -934,7 +1183,7 @@ body.aht-noselect, body.aht-noselect * {
   // ---------- init ----------
   function readCfg(reveal) {
     cfg = Object.assign({}, DEFAULTS, reveal.getConfig().autohideToolbar || {});
-    if (/[?&]aht-ink=0/.test(location.search)) cfg.annotations = false;
+    if (RE_NOINK.test(location.search)) cfg.annotations = false;
     if (!cfg.annotations) cfg.persist = false;   // clean mode never touches stored ink
   }
   function init(reveal) {
@@ -951,6 +1200,10 @@ body.aht-noselect, body.aht-noselect * {
         || /[?&]view=scroll/.test(location.search)) return;
     readCfg(reveal);
     state.color = cfg.defaultColor;
+    // a custom colors array may not contain the stock default — fall back to
+    // the palette's darkest so the bar always highlights a real swatch
+    if (cfg.colors.indexOf(state.color) < 0)
+      state.color = cfg.colors.reduce((a, c) => (luminance(a) <= luminance(c) ? a : c), cfg.colors[0] || '#000000');
     state.width = cfg.defaultWidth;
 
     injectCSS();
@@ -959,7 +1212,13 @@ body.aht-noselect, body.aht-noselect * {
     ctx = canvas.getContext('2d');
     slidesEl = reveal.getSlidesElement ? reveal.getSlidesElement() : document.querySelector('.reveal .slides');
     computeKeys();          // before load(): key migration needs them
-    load();
+    load((env) => {
+      // async plugin deps (e.g. KaTeX off a CDN) can hold reveal's start()
+      // past DOMContentLoaded — and adopting boards needs Reveal.sync().
+      // Adopt now only if reveal is up; otherwise the moment it is.
+      if (state.Reveal.isReady && !state.Reveal.isReady()) revealOn('ready', () => adoptEnvelope(env, false));
+      else adoptEnvelope(env, false);
+    });
     materializeBoards();    // before reveal's first layout
     loadUI();
     buildUI();
@@ -969,19 +1228,21 @@ body.aht-noselect, body.aht-noselect * {
     // slides, so both windows stay identical. Last write wins.
     if (cfg.persist) {
       listen(window, 'storage', (e) => {
+        // drawing is re-checked here only to skip the (possibly large) parse
+        // mid-stroke — adoptEnvelope owns the actual invariant
         if (e.key !== cfg.storageKey || state.drawing) return;
         const env = e.newValue ? parseEnvelope(e.newValue) : { strokes: {}, boards: [] };
         if (env) adoptEnvelope(env, false);
       });
     }
 
-    const onLayout = () => { place(); updateSlideNo(); updateZone(); applyBarPos(); };
+    const onLayout = () => { place(); updateSlideNo(); syncNav(); updateZone(); applyBarPos(); };
     const scheduleLayout = () => { clearTimeout(layoutTimer); layoutTimer = setTimeout(onLayout, 0); };
     revealOn('ready', onLayout);           // plugins init before 'ready', so this covers startup
     // late layout shifts (web fonts settling after 'ready') can move the slides box
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleLayout).catch(() => {});
     revealOn('slidechanged', (ev) => {
-      place(); updateSlideNo();
+      place(); updateSlideNo(); syncNav();
       // a board slide is for writing: entering one auto-enables the pen (and
       // leaving undoes exactly that), with pen/surface contrast kept sane
       const isB = !!boardIdOf(ev && ev.currentSlide);
@@ -1024,8 +1285,10 @@ body.aht-noselect, body.aht-noselect * {
     // small runtime API (drive from your own buttons / the console) — the
     // destructive calls act directly; confirmation lives in the UI paths only
     window.AutohideToolbar = {
-      enable, setTool, setColor, undo, clearSlide, clearAll,
-      addBoard, removeBoard, toggleSurface, exportJSON, saveCopy,
+      enable, setTool, setColor, undo, redo, clearSlide, clearAll,
+      addBoard, removeBoard, toggleSurface,
+      saveCopy,                 // saveCopy(false) = clean copy, no ink
+      printPdf: openPrint,      // printPdf(false) = without ink
       toggle: () => enable(!state.on),
     };
   }
@@ -1035,24 +1298,50 @@ body.aht-noselect, body.aht-noselect * {
   // over embedded baseline, same precedence as live) is rendered as one SVG
   // overlay per inked slide: vectors stay crisp at any print DPI. Board
   // sections are re-inserted BEFORE reveal builds the print layout, so they
-  // print as real pages with their dark/white background.
+  // print as real pages, their dark/white surface filling the slide box.
   function initPrint(reveal) {
     state.Reveal = reveal;
     readCfg(reveal);
+    // opened from the export menu (aht-print=1): once reveal's print layout is
+    // done and web fonts have settled, pop the browser's print dialog — the
+    // user only picks "Save as PDF" there. The settle delay gives async
+    // typesetting (MathJax) a chance; if a preview still looks unfinished,
+    // cancelling and pressing Cmd/Ctrl+P again is always possible.
+    if (RE_PRINT.test(location.search)) {
+      reveal.on('pdf-ready', () => {
+        Promise.resolve(document.fonts && document.fonts.ready)
+          .catch(() => {})
+          .then(() => setTimeout(() => window.print(), 500));
+      });
+    }
     if (!cfg.annotations) return;
     slidesEl = reveal.getSlidesElement ? reveal.getSlidesElement() : document.querySelector('.reveal .slides');
     if (!slidesEl) return;
+    injectCSS();   // board sections get their dark/white surface from the
+                   // injected [data-aht-surface] rules — print pages need them too
     computeKeys();
-    load();
+    // A late-read block always lands in time: reveal defers print activation
+    // (pagination + pdf-ready) to window 'load' while the document is still
+    // parsing, and activation re-scans the DOM — so the late boards paginate
+    // without reveal.sync(), which would only re-arm the input listeners
+    // reveal's print mode deliberately removed.
+    load((env) => {
+      state.strokes = env.strokes || {}; state.boards = env.boards || [];
+      materializeBoards();
+    });
     materializeBoards();
     reveal.on('pdf-ready', renderPrintInk);
   }
   function renderPrintInk() {
-    // reveal's print layout sets each section's width but NOT its height (an
-    // empty board section would collapse) — so the overlay is sized to the
-    // computed slide box, whose top-left the section shares
+    // Ink ratios are relative to the SLIDE BOX. In reveal's print layout that
+    // box sits inside each .pdf-page at the margin gutter (page − slide)/2 —
+    // but the SECTION does not share its top: with center:true reveal centres
+    // the section by its CONTENT height, so short slides sit lower than the
+    // box. Anchoring the overlay to the section displaced ink downwards and
+    // clipped it at the page edge — so anchor it to the .pdf-page instead.
     const size = state.Reveal.getComputedSlideSize
       ? state.Reveal.getComputedSlideSize(window.innerWidth, window.innerHeight) : null;
+    const margin = state.Reveal.getConfig().margin || 0;
     // Fragment steps are page CLONES reveal creates after init, so they're not
     // in the key cache — re-derive their key the same way the original was
     // keyed, so ink shows on every step's page. (Identical twin slides with
@@ -1068,17 +1357,30 @@ body.aht-noselect, body.aht-noselect * {
       return 'c:' + fnv1a(basis) + ':0';
     };
     leafSections().forEach((sec) => {
-      const list = state.strokes[printKey(sec)];
-      if (!list || !list.length) return;
       const W = (size && size.width) || sec.offsetWidth || 960;
       const H = (size && size.height) || state.Reveal.getConfig().height || 700;
-      if (getComputedStyle(sec).position === 'static') sec.style.position = 'relative';
+      // slide-box origin within the page (reveal: page = slide × (1 + margin))
+      const gx = (Math.floor(W * (1 + margin)) - W) / 2;
+      const gy = (Math.floor(H * (1 + margin)) - H) / 2;
+      const page = sec.closest && sec.closest('.pdf-page');
+      // boards keep the slide format in print too: reveal's print layout sets
+      // a section's left/width but not its height (it centres by content
+      // height) — pin board sections to the slide box explicitly
+      if (page && sec.hasAttribute('data-aht-board')) {
+        sec.style.left = gx + 'px'; sec.style.top = gy + 'px';
+        sec.style.width = W + 'px'; sec.style.height = H + 'px';
+      }
+      const list = state.strokes[printKey(sec)];
+      if (!list || !list.length) return;
+      const host = page || sec, ox = page ? gx : 0, oy = page ? gy : 0;
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('class', 'aht-print-ink');
       svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-      svg.setAttribute('style', 'position:absolute;left:0;top:0;width:' + W + 'px;height:' + H + 'px;pointer-events:none;overflow:visible;');
+      svg.setAttribute('style', 'position:absolute;left:' + ox + 'px;top:' + oy
+        + 'px;width:' + W + 'px;height:' + H + 'px;pointer-events:none;overflow:visible;');
       list.forEach((st) => { if (st.points.length) svg.appendChild(printStroke(st, W, H)); });
-      sec.appendChild(svg);
+      host.appendChild(svg);
     });
   }
   // SVG twin of drawStroke: same ratio→box mapping, aspect-fit and quadratic
@@ -1123,9 +1425,10 @@ body.aht-noselect, body.aht-noselect * {
     cleanups = [];
     clearTimeout(chromeTimer); clearTimeout(layoutTimer);
     closeConfirm();
+    closeExport();
     if (slidesEl) slidesEl.querySelectorAll('[data-aht-board]').forEach((s) => s.remove());
     [canvas, toolsEl, bar, document.getElementById('aht-styles')].forEach((n) => n && n.remove());
-    canvas = toolsEl = bar = launch = slideNoEl = fileInput = null;
+    canvas = toolsEl = bar = launch = slideNoEl = null;
     document.body.classList.remove('aht-chrome');
     document.body.classList.remove('aht-noselect');
     state.on = false; state.overview = false; state.drawing = false; boardAuto = false;

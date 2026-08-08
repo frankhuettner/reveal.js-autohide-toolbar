@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>reveal.js — the boxes, made visible</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/theme/white.css" />
+  <style>
+    /* ── the point of this deck: outline every box reveal works with ────── */
+    .reveal { box-shadow: inset 0 0 0 5px #f97316; }             /* ORANGE: reveal viewport (= browser window here) */
+    .reveal .slides { outline: 3px dashed #16a34a; }             /* GREEN dashed: the SLIDE BOX — where ink can go */
+    .reveal .slides section { outline: 2px solid #2563eb; }      /* BLUE: each slide's CONTENT box */
+
+    .legend { font-size: .55em; text-align: left; display: inline-block; line-height: 1.6; }
+    .legend b { display: inline-block; width: 3.2em; }
+    .orange { color: #f97316; } .green { color: #16a34a; } .blue { color: #2563eb; }
+    .hint { font-size: .5em; color: #666; }
+    #readout {
+      position: fixed; top: 10px; right: 12px; z-index: 100;
+      font: 12px/1.5 ui-monospace, monospace; text-align: right;
+      background: rgba(255,255,255,.85); padding: 6px 10px; border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    }
+  </style>
+</head>
+<body>
+<div id="readout">…</div>
+<div class="reveal">
+  <div class="slides">
+
+    <section>
+      <h2>The boxes of a reveal deck</h2>
+      <p class="legend">
+        <b class="orange">■</b><span class="orange">reveal viewport</span> — the whole browser window<br/>
+        <b class="green">▨</b><span class="green">slide box</span> — config <code>width×height</code>, scaled to fit,
+          letterboxed. <strong>Ink lives here.</strong><br/>
+        <b class="blue">■</b><span class="blue">content box</span> — this slide's actual content
+      </p>
+      <p class="hint">Resize the window: green keeps its aspect ratio and floats inside orange —
+      the gap between them is the letterbox. The numbers top-right update live.<br/>
+      PowerPoint, Keynote &amp; Google Slides paint this letterbox <em>black</em>;
+      reveal paints the whole viewport with the theme / slide background instead,
+      so normally you never see it — that's why this deck outlines it.</p>
+    </section>
+
+    <section>
+      <h3>Short slide</h3>
+      <p class="hint">With <code>center: true</code> (the default) reveal centres the blue
+      content box vertically inside the green slide box. The blue box is only as tall
+      as its content — the green box is always the full slide.</p>
+    </section>
+
+    <section>
+      <h3>config.margin</h3>
+      <p style="font-size:.7em">reveal reserves <code>margin</code> (default <code>0.04</code> = 4%)
+      of the window around the slide box. So even when the window has exactly the
+      slide's aspect ratio, green stays a little smaller than orange — that gap plus
+      any letterboxing is the space around your slides.</p>
+      <p class="hint">Try <code>Reveal.configure({ margin: 0.3 })</code> in the console.
+      Scale is also clamped to <code>maxScale</code> (default <code>2</code>) — on a large
+      display the green box stops growing and the letterbox gets fat; raise it
+      (<code>maxScale: 4</code>) to use the pixels.</p>
+    </section>
+
+    <section>
+      <h3>Now press <kbd>A</kbd></h3>
+      <p style="font-size:.7em">The annotation layer shows its own dashed outline while
+      you draw — it sits exactly on the green slide box: that's the writable area,
+      on normal slides and on <em>board slides</em> alike (boards keep the deck's
+      slide format).</p>
+      <p class="hint">Ink is stored in slide-box coordinates: window size, <code>margin</code>
+      and <code>maxScale</code> may change any time. But pick the <strong>aspect ratio</strong>
+      (<code>width×height</code>) before annotating — switching 4:3&nbsp;→&nbsp;16:9 later
+      stretches existing strokes relative to the content.</p>
+    </section>
+
+    <section>
+      <h3>Who controls what?</h3>
+      <p class="legend" style="font-size:.55em">
+        <b style="width:5.5em">config</b>geometry — <code>width×height</code> (the ratio),
+          <code>margin</code>, <code>minScale</code>/<code>maxScale</code><br/>
+        <b style="width:5.5em">theming</b>CSS — colours &amp; fonts, incl. the letterbox:
+          paint <code>.reveal-viewport</code> black + <code>.slides</code> white
+          for the PPT look<br/>
+        <b style="width:5.5em">plugin</b>behaviour — toolbar, ink, boards, download/print;
+          adapts to whatever geometry and theme you pick
+      </p>
+      <p class="hint">The main demo deck uses 16:9 + <code>margin: 0</code> +
+      <code>maxScale: 4</code> (config) and black letterbox bars (theming) —
+      this deck keeps reveal's defaults so you can see them.</p>
+    </section>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.js"></script>
+<script src="../reveal-autohide-toolbar.js"></script>
+<script>
+  Reveal.initialize({
+    width: 960,
+    height: 540,
+    hash: true,
+    controls: false,
+    slideNumber: false,
+    scrollActivationWidth: 0,
+    plugins: [ RevealAutohideToolbar ],
+  });
+  const readout = document.getElementById('readout');
+  function update() {
+    const s = document.querySelector('.reveal .slides').getBoundingClientRect();
+    const c = Reveal.getConfig();
+    readout.innerHTML =
+      '<span style="color:#f97316">window ' + innerWidth + '×' + innerHeight + '</span><br/>' +
+      '<span style="color:#16a34a">slide box ' + Math.round(s.width) + '×' + Math.round(s.height) +
+      ' (config ' + c.width + '×' + c.height + ' @ scale ' + Reveal.getScale().toFixed(2) + ')</span><br/>' +
+      'margin ' + c.margin;
+  }
+  Reveal.on('ready', update);
+  Reveal.on('resize', update);
+  window.addEventListener('resize', () => setTimeout(update, 50));
+</script>
+</body>
+</html>

@@ -5,7 +5,15 @@
  * Run OUTSIDE the sandbox (a normal terminal), from anywhere:
  *   node reveal.js-autohide-toolbar/test/run-tests.mjs
  *
- * - Spawns its own static server (port 8036, plugin dir) — fully self-contained.
+ * - The four matrix combos run as PARALLEL worker processes, one static server
+ *   and port each (8036–8039) — wall clock ≈ the slowest combo. On a TTY the
+ *   parent shows one sticky progress bar per combo and prints failures the
+ *   moment they happen (AHT_BARS=1/0 forces bars on/off); without a TTY it
+ *   streams every line, interleaved (each carries its [engine@version]).
+ *   results.log always holds the FULL log, regrouped per combo in matrix
+ *   order. AHT_SERIAL=1 restores the sequential single-process run (handy
+ *   for headed debugging).
+ * - Each worker spawns its own static server (plugin dir) — fully self-contained.
  *   The server rewrites the pinned reveal.js CDN version in every served HTML
  *   page to the matrix target, including reveal 6's moved plugin paths
  *   (plugin/<name>/<name>.js ↔ dist/plugin/<name>.js), so ONE set of fixtures
@@ -18,6 +26,7 @@
  */
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -25,18 +34,26 @@ import fs from 'node:fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(__dirname, '..');
 const ART = path.join(__dirname, 'artifacts');
-fs.rmSync(ART, { recursive: true, force: true });
+if (!process.env.AHT_COMBO) fs.rmSync(ART, { recursive: true, force: true });  // workers write into the parent's fresh dir
 fs.mkdirSync(ART, { recursive: true });
 
 const require = createRequire(import.meta.url);
-const { chromium, devices } = require('playwright-chromium');
-const { webkit } = require('playwright-webkit');
+// Each playwright-<engine> wrapper costs ~100 ms and ~90 MB RSS to require —
+// load one only when THIS process launches browsers (worker/serial mode); the
+// parent just spawns workers and draws bars. Both packages re-export the same
+// devices registry, so it's picked up alongside whichever engine loads.
+let devices;
+function loadEngine(engine) {
+  const pw = require('playwright-' + engine);
+  devices = pw.devices;
+  return pw[engine];
+}
 
 // The reveal.js versions of the test matrix: last 5.x (the pin the fixtures
 // carry) and current 6.x. The server rewrites served HTML to each target.
 const VERSIONS = ['5.2.1', '6.0.1'];
 
-const PORT = 8036;
+const PORT = Number(process.env.AHT_PORT || 8036);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DEMO = `${BASE}/demo/`;
 const FIXTURE = `${BASE}/test/fixture-options.html`;
@@ -61,16 +78,18 @@ let CUR = '';          // current engine label
 let CURPAGE = null;    // page for failure screenshots
 let failNo = 0;
 function log(s) { console.log(s); logLines.push(s); }
+// one line per result — the parent's progress bars parse EXACTLY these prefixes
+const P_PASS = '  PASS  ', P_FAIL = '  FAIL  ', P_ERR = ' '.repeat(8), P_FATAL = 'FATAL: ';
 async function test(name, fn) {
   const full = `[${CUR}] ${name}`;
   try {
     await fn();
     results.push({ name: full, ok: true });
-    log(`  PASS  ${full}`);
+    log(P_PASS + full);
   } catch (e) {
     const err = String(e && e.message || e);
     results.push({ name: full, ok: false, error: err });
-    log(`  FAIL  ${full}\n        ${err.split('\n')[0]}`);
+    log(P_FAIL + full + '\n' + P_ERR + err.split('\n')[0]);
     if (CURPAGE) await CURPAGE.screenshot({ path: path.join(ART, `fail-${CUR}-${++failNo}.png`) }).catch(() => {});
   }
 }
@@ -122,6 +141,21 @@ async function inkCount(page) {
 const colored = (px) => px[3] > 120;
 const chromeOn = (page) => page.evaluate(() => document.body.classList.contains('aht-chrome'));
 const indices = (page) => page.evaluate(() => window.Reveal.getIndices());
+// hover the bottom-left corner so the auto-hidden toolbar chrome wakes
+async function wake(page) {
+  await page.mouse.move(60, page.viewportSize().height - 30);
+  await page.waitForTimeout(250);
+}
+// index of the first top-level slide containing a match (structure-independent)
+const slideIndexWith = (page, sel) => page.evaluate((q) => Array.prototype.findIndex.call(
+  document.querySelectorAll('.reveal .slides > section'), (s) => s.querySelector(q)), sel);
+// wake the toolbar, then open the download/print menu
+async function openExportMenu(page) {
+  await wake(page);
+  await page.locator('#aht-export').click();
+  await page.waitForTimeout(150);
+  assert(await page.evaluate(() => !!document.getElementById('aht-export-menu')), 'export menu did not open');
+}
 
 // ---------- the full suite, parameterized by engine ----------
 async function runSuite(browserType, label) {
@@ -162,13 +196,14 @@ async function runSuite(browserType, label) {
       ]);
       assert(t[0] && t[1] && t[2] && t[3] === 'object', JSON.stringify(t));
     });
-    await test('toolbar has default buttons + slide counter "1 / 4"', async () => {
+    await test('toolbar has default buttons + slide counter matches reveal', async () => {
       const t = await page.evaluate(() => ({
         btns: document.querySelectorAll('#aht-toolbar .aht-btn').length,
         no: document.getElementById('aht-slideno').textContent,
+        total: window.Reveal.getTotalSlides(),
       }));
-      assert(t.btns === 6, 'expected 6 buttons, got ' + t.btns);
-      assert(t.no === '1 / 4', 'counter: ' + t.no);
+      assert(t.btns === 9, 'expected 9 buttons (incl. up/down cluster + export), got ' + t.btns);
+      assert(t.total > 1 && t.no === `1 / ${t.total}`, `counter: ${t.no} vs reveal total ${t.total}`);
     });
     await test('canvas overlays the slides box (geometry)', async () => {
       const d = await page.evaluate(() => {
@@ -185,30 +220,55 @@ async function runSuite(browserType, label) {
       assert(!(await chromeOn(page)), 'chrome still visible after idle');
     });
     await test('hover bottom-left corner shows toolbar; leaving hides it', async () => {
-      const vp = page.viewportSize();
-      await page.mouse.move(60, vp.height - 30);
-      await page.waitForTimeout(200);
+      await wake(page);
       assert(await chromeOn(page), 'not shown in corner');
       await shot(page, 'g2-toolbar-visible');
+      const vp = page.viewportSize();
       await page.mouse.move(vp.width / 2, vp.height / 2);
       await page.waitForTimeout(700);
       assert(!(await chromeOn(page)), 'not hidden after leaving');
     });
     await test('next/prev buttons navigate and update counter', async () => {
-      const vp = page.viewportSize();
-      await page.mouse.move(60, vp.height - 30);
-      await page.waitForTimeout(200);
-      await page.locator('#aht-toolbar .aht-btn').nth(1).click();
+      await wake(page);
+      await page.locator('#aht-toolbar .aht-btn[title^="Next"]').click();
       await page.waitForTimeout(600);
       assert((await indices(page)).h === 1, 'next did not advance');
       const no = await page.locator('#aht-slideno').textContent();
-      assert(no === '2 / 4', 'counter after next: ' + no);
-      await page.locator('#aht-toolbar .aht-btn').nth(0).click();
+      const total = await page.evaluate(() => window.Reveal.getTotalSlides());
+      assert(no === `2 / ${total}`, 'counter after next: ' + no);
+      await page.locator('#aht-toolbar .aht-btn[title^="Previous"]').click();
       await page.waitForTimeout(600);
       assert((await indices(page)).h === 0, 'prev did not go back');
     });
+    await test('vertical nav cluster: gone without routes, appears on stacks, navigates', async () => {
+      // slide 0 has no vertical routes → the cluster is REMOVED, not greyed out
+      assert(await page.evaluate(() => document.getElementById('aht-updown').hidden),
+        'cluster shown on a slide without vertical routes');
+      const stack = await slideIndexWith(page, 'section');
+      assert(stack >= 0, 'no vertical stack found in the demo');
+      await page.evaluate((i) => window.Reveal.slide(i), stack);
+      await page.waitForTimeout(500);
+      const t = await page.evaluate(() => ({
+        hidden: document.getElementById('aht-updown').hidden,
+        upDim: document.getElementById('aht-up').classList.contains('dim'),
+        downDim: document.getElementById('aht-down').classList.contains('dim'),
+      }));
+      assert(!t.hidden, 'cluster not shown on top of a stack');
+      assert(t.upDim && !t.downDim, 'wrong dim state on stack top: ' + JSON.stringify(t));
+      await wake(page);
+      await page.locator('#aht-down').click();
+      await page.waitForTimeout(500);
+      assert((await indices(page)).v === 1, 'down button did not descend');
+      await page.locator('#aht-up').click();
+      await page.waitForTimeout(500);
+      assert((await indices(page)).v === 0, 'up button did not ascend');
+      await page.evaluate(() => window.Reveal.slide(0));
+      await page.waitForTimeout(400);
+      assert(await page.evaluate(() => document.getElementById('aht-updown').hidden),
+        'cluster did not disappear again after leaving the stack');
+    });
     await test('overview button toggles overview and hides canvas', async () => {
-      await page.locator('#aht-toolbar .aht-btn').nth(2).click();
+      await page.locator('#aht-toolbar .aht-btn[title^="Slide overview"]').click();
       await page.waitForTimeout(500);
       assert(await page.evaluate(() => window.Reveal.isOverview()), 'overview not on');
       assert(await page.evaluate(() => document.getElementById('aht-canvas').style.display === 'none'), 'canvas not hidden in overview');
@@ -217,12 +277,10 @@ async function runSuite(browserType, label) {
       assert(!(await page.evaluate(() => window.Reveal.isOverview())), 'overview not off');
     });
     await test('speaker-view button opens the notes window', async () => {
-      const vp = page.viewportSize();
-      await page.mouse.move(60, vp.height - 30);
-      await page.waitForTimeout(200);
+      await wake(page);
       const [popup] = await Promise.all([
         ctx.waitForEvent('page', { timeout: 8000 }),
-        page.locator('#aht-toolbar .aht-btn').nth(3).click(),
+        page.locator('#aht-toolbar .aht-btn[title^="Speaker view"]').click(),
       ]);
       await popup.close();
     });
@@ -263,14 +321,22 @@ async function runSuite(browserType, label) {
       await page.waitForTimeout(200);
       assert(!colored(await pixel(page, 400, 500)), 'undo did not remove stroke');
     });
+    await test('Ctrl+Shift+Z redoes the undone stroke', async () => {
+      await page.keyboard.press('Control+Shift+z');
+      await page.waitForTimeout(200);
+      assert(colored(await pixel(page, 400, 500)), 'redo did not restore the stroke');
+      await page.keyboard.press('Control+z');   // back to the undone state for the next tests
+      await page.waitForTimeout(200);
+      assert(!colored(await pixel(page, 400, 500)), 'second undo failed after redo');
+    });
     await test('color swatch changes pen color', async () => {
-      await page.locator('#aht-bar .aht-swatch[data-color="#0070C0"]').click();
+      await page.locator('#aht-bar .aht-swatch[data-color="#1D4ED8"]').click();
       await draw(page, [[300, 520], [500, 520]]);
       const px = await pixel(page, 400, 520);
       assert(px[2] > 120 && px[0] < 90, 'not blue: ' + px);
     });
     await test('X clears this slide; Esc exits annotation', async () => {
-      await page.locator('#aht-bar .aht-swatch[data-color="#FF0000"]').click();
+      await page.locator('#aht-bar .aht-swatch[data-color="#B91C1C"]').click();
       await draw(page, [[300, 350], [500, 350]]);
       await page.keyboard.press('x');
       await page.waitForTimeout(200);
@@ -571,20 +637,22 @@ async function runSuite(browserType, label) {
       await p2.touchscreen.tap(vp.width * 0.2, vp.height * 0.4);
       await p2.waitForTimeout(700);
       assert((await indices(p2)).h === 0, 'left-half tap did not go back');
-      await p2.evaluate(() => window.Reveal.slide(2));
+      const btnSlide = await slideIndexWith(p2, 'button');
+      assert(btnSlide >= 0, 'no slide with a <button> found');
+      await p2.evaluate((i) => window.Reveal.slide(i), btnSlide);
       await p2.waitForTimeout(700);
       const btn = await p2.locator('section.present button').first().boundingBox();
-      assert(btn, 'fixture button not found on slide 3');
+      assert(btn, 'button not found on its slide');
       await p2.touchscreen.tap(btn.x + btn.width / 2, btn.y + btn.height / 2);
       await p2.waitForTimeout(700);
-      assert((await indices(p2)).h === 2, 'tap on <button> wrongly navigated');
+      assert((await indices(p2)).h === btnSlide, 'tap on <button> wrongly navigated');
       assert(errs.length === 0, errs.join(' | '));
       await mob.close();
       CURPAGE = page;
     });
 
     log(`=== ${label} · G10 board slides ===`);
-    await test('board button inserts an uncounted board slide and auto-enables the pen', async () => {
+    await test('board button inserts an uncounted WHITE board, slide-box canvas, auto-pen', async () => {
       await page.goto(DEMO, { waitUntil: 'networkidle' });
       await waitReady(page);
       await page.evaluate(() => localStorage.clear());
@@ -594,43 +662,72 @@ async function runSuite(browserType, label) {
       await page.waitForTimeout(400);
       await page.keyboard.press('a');
       await page.waitForTimeout(200);
-      await page.locator('#aht-bar .aht-swatch[data-color="#000000"]').click();  // must auto-brighten on the dark board
+      await page.locator('#aht-bar .aht-swatch[data-color="#FFFFFF"]').click();  // must auto-darken on the white board
       await page.locator('#aht-board').click();
       await page.waitForTimeout(600);
-      const t = await page.evaluate(() => ({
-        boards: document.querySelectorAll('[data-aht-board]').length,
-        onBoard: !!window.Reveal.getCurrentSlide().getAttribute('data-aht-board'),
-        uncounted: window.Reveal.getCurrentSlide().getAttribute('data-visibility') === 'uncounted',
-        active: document.getElementById('aht-canvas').classList.contains('active'),
-        counter: document.getElementById('aht-slideno').textContent,
-        swatch: document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'),
-        surfaceShown: !document.getElementById('aht-surface').hidden,
-      }));
+      const t = await page.evaluate(() => {
+        const sec = window.Reveal.getCurrentSlide();
+        // DOMRects serialize as {} across the evaluate boundary — copy fields
+        const R = (r) => ({ left: r.left, top: r.top, width: r.width, height: r.height });
+        const slides = R(document.querySelector('.reveal .slides').getBoundingClientRect());
+        const cv = R(document.getElementById('aht-canvas').getBoundingClientRect());
+        const sr = R(sec.getBoundingClientRect());
+        return {
+          boards: document.querySelectorAll('[data-aht-board]').length,
+          onBoard: !!sec.getAttribute('data-aht-board'),
+          uncounted: sec.getAttribute('data-visibility') === 'uncounted',
+          surface: sec.getAttribute('data-aht-surface'),
+          surfaceColor: getComputedStyle(sec).backgroundColor,
+          active: document.getElementById('aht-canvas').classList.contains('active'),
+          counter: document.getElementById('aht-slideno').textContent,
+          total: window.Reveal.getTotalSlides(),
+          swatch: document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'),
+          surfaceShown: !document.getElementById('aht-surface').hidden,
+          mode: document.getElementById('aht-board').dataset.mode,
+          slides, cv, sr,
+          vpH: window.innerHeight,
+        };
+      });
       assert(t.boards === 1, 'boards=' + t.boards);
       assert(t.onBoard && t.uncounted && t.active, JSON.stringify(t));
-      assert(t.counter === '1 / 4', 'board must not shift the count: ' + t.counter);
-      assert(t.swatch === '#FFFFFF', 'dark pen not auto-brightened: ' + t.swatch);
+      assert(t.surface === 'white', 'new board not white by default: ' + t.surface);
+      assert(t.surfaceColor === 'rgb(255, 255, 255)', 'board surface not painted white: ' + t.surfaceColor);
+      assert(t.counter === `1 / ${t.total}`, `board must not shift the count: ${t.counter} vs ${t.total}`);
+      assert(t.swatch === '#000000', 'light pen not auto-darkened on white board: ' + t.swatch);
       assert(t.surfaceShown, 'surface toggle not shown on a board');
+      assert(t.mode === 'remove', 'board button not in remove mode on a board');
+      // boards keep the deck's slide format: canvas AND surface = the slide
+      // box, NOT the viewport (at 1280×800 the 16:9 box is 1280×720, so the
+      // heights genuinely differ)
+      assert(t.slides.height < t.vpH - 10, 'fixture cannot distinguish box from viewport');
+      for (const k of ['left', 'top', 'width', 'height']) {
+        approx(t.cv[k], t.slides[k], 2, `board canvas ${k} off the slide box`);
+        approx(t.sr[k], t.slides[k], 2, `board surface ${k} off the slide box`);
+      }
       await shot(page, 'g10-board');
     });
-    await test('surface toggle flips dark/white; pen contrast follows', async () => {
-      await page.locator('#aht-surface').click();
+    await test('surface toggle flips white/dark; pen contrast follows', async () => {
+      await page.locator('#aht-surface').click();   // white → dark
       await page.waitForTimeout(400);
       const t = await page.evaluate(() => ({
-        bg: window.Reveal.getCurrentSlide().getAttribute('data-background-color'),
+        surface: window.Reveal.getCurrentSlide().getAttribute('data-aht-surface'),
+        bg: getComputedStyle(window.Reveal.getCurrentSlide()).backgroundColor,
         swatch: document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'),
       }));
-      assert(t.bg === '#FFFFFF', 'board not white: ' + t.bg);
-      assert(t.swatch === '#000000', 'light pen not auto-darkened: ' + t.swatch);
-      await shot(page, 'g10-whiteboard');
-      await page.locator('#aht-surface').click();   // back to dark
+      assert(t.surface === 'dark' && t.bg === 'rgb(0, 0, 0)', 'board not dark after toggle: ' + t.surface + ' / ' + t.bg);
+      assert(t.swatch === '#FFFFFF', 'dark pen not auto-brightened: ' + t.swatch);
+      await shot(page, 'g10-blackboard');
+      await page.locator('#aht-surface').click();   // back to white
       await page.waitForTimeout(400);
       const sw = await page.evaluate(() => document.querySelector('#aht-bar .aht-swatch.active').getAttribute('data-color'));
-      assert(sw === '#FFFFFF', 'flip back to dark did not re-brighten the pen: ' + sw);
+      assert(sw === '#000000', 'flip back to white did not re-darken the pen: ' + sw);
     });
     await test('board ink persists: reload restores the board slide and its ink', async () => {
       await draw(page, [[300, 300], [500, 300]]);
       assert(colored(await pixel(page, 400, 300)), 'no ink on the board');
+      // the slide box is the board — drawing works right up to its left edge
+      await draw(page, [[15, 400], [80, 400]]);
+      assert(colored(await pixel(page, 45, 400)), 'no ink at the box edge (dead margin?)');
       await page.reload({ waitUntil: 'networkidle' });
       await waitReady(page);
       await page.evaluate(() => window.Reveal.slide(1));   // the board lives at index 1
@@ -744,9 +841,11 @@ async function runSuite(browserType, label) {
       const t = await p2.evaluate(() => ({
         boards: document.querySelectorAll('[data-aht-board]').length,
         counter: document.getElementById('aht-slideno').textContent,
+        updownHidden: document.getElementById('aht-updown').hidden,
       }));
       assert(t.boards === 1, 'embedded board not materialized');
       assert(t.counter === '1 / 2', 'board wrongly counted: ' + t.counter);
+      assert(t.updownHidden, 'up/down cluster shown although the deck has no vertical slides');
       const b = await p2.locator('#aht-canvas').boundingBox();
       assert(colored(await pixel(p2, b.width / 2, b.height / 2)), 'embedded ink not rendered');
       await shot(p2, 'g12-embed-baseline');
@@ -761,6 +860,10 @@ async function runSuite(browserType, label) {
       assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 0), 'clean mode still shows boards');
       const b = await p2.locator('#aht-canvas').boundingBox();
       assert(!colored(await pixel(p2, b.width / 2, b.height / 2)), 'clean mode still shows ink');
+      // the export menu shrinks to the two clean choices (no ink to embed/print)
+      await openExportMenu(p2);
+      const items = await p2.evaluate(() => document.querySelectorAll('#aht-export-menu .aht-export-item').length);
+      assert(items === 2, 'clean-mode menu should offer 2 choices, got ' + items);
       await p2.close();
       CURPAGE = page;
     });
@@ -782,38 +885,23 @@ async function runSuite(browserType, label) {
       await p2.close();
       CURPAGE = page;
     });
-    await test('export JSON / import JSON round-trip (import confirms before overwrite)', async () => {
+    await test('export menu: toolbar button opens 4 choices, Esc closes', async () => {
       const p2 = await ctx.newPage();
       CURPAGE = p2;
-      await p2.goto(EMBED, { waitUntil: 'networkidle' });
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
       await waitReady(p2);
-      await p2.evaluate(() => localStorage.clear());   // lift the tombstone → baseline is back
-      await p2.reload({ waitUntil: 'networkidle' });
-      await waitReady(p2);
-      await p2.keyboard.press('a');
-      await p2.waitForTimeout(300);
-      const [dl] = await Promise.all([
-        p2.waitForEvent('download', { timeout: 10000 }),
-        p2.locator('#aht-export').click(),
-      ]);
-      const file = path.join(ART, `${label}-export.json`);
-      await dl.saveAs(file);
-      const env = JSON.parse(fs.readFileSync(file, 'utf8'));
-      assert(env.v === 1 && env.strokes['id:one'] && env.boards.length === 1, 'export content wrong: ' + JSON.stringify(env).slice(0, 100));
-      await p2.evaluate(() => window.AutohideToolbar.clearAll());   // API path clears without dialog
-      await p2.waitForTimeout(400);
-      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 0), 'clearAll left the board');
-      await p2.locator('#aht-bar input[type=file]').setInputFiles(file);
-      await p2.waitForTimeout(700);
-      // nothing to overwrite → no dialog; board + ink restored
-      assert(await p2.evaluate(() => document.querySelectorAll('[data-aht-board]').length === 1), 'import did not restore the board');
-      const b = await p2.locator('#aht-canvas').boundingBox();
-      assert(colored(await pixel(p2, b.width / 2, b.height / 2)), 'import did not restore the ink');
-      // importing over EXISTING ink must ask first
-      await p2.locator('#aht-bar input[type=file]').setInputFiles(file);
-      await p2.waitForTimeout(400);
-      assert(await p2.evaluate(() => !!document.getElementById('aht-confirm-wrap')), 'no confirmation on overwriting import');
-      await p2.locator('#aht-confirm .aht-cancel').click();
+      await openExportMenu(p2);
+      const t = await p2.evaluate(() => ({
+        items: Array.from(document.querySelectorAll('#aht-export-menu .aht-export-item'), (b) => b.textContent),
+        hint: !!document.querySelector('#aht-export-menu .aht-export-hint'),
+      }));
+      assert(t.items.length === 4 && t.hint, 'menu content wrong: ' + JSON.stringify(t));
+      await shot(p2, 'g12-export-menu');
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(150);
+      assert(await p2.evaluate(() => !document.getElementById('aht-export-menu')), 'Esc did not close the menu');
+      // Esc was swallowed by the menu — reveal must NOT be in overview now
+      assert(await p2.evaluate(() => !window.Reveal.isOverview()), 'Esc leaked to reveal (overview opened)');
       await p2.close();
       CURPAGE = page;
     });
@@ -828,17 +916,89 @@ async function runSuite(browserType, label) {
       await p2.keyboard.press('a');
       await p2.waitForTimeout(200);
       await draw(p2, [[300, 300], [500, 300]]);
+      await p2.keyboard.press('Escape');   // leave annotation, then export via menu
+      await p2.waitForTimeout(200);
+      await openExportMenu(p2);
       const [dl] = await Promise.all([
         p2.waitForEvent('download', { timeout: 10000 }),
-        p2.locator('#aht-savecopy').click(),
+        p2.locator('#aht-export-menu .aht-export-item:has-text("Save annotated copy")').click(),
       ]);
+      assert(/-annotated\.html$/.test(dl.suggestedFilename()), 'unexpected filename: ' + dl.suggestedFilename());
       const file = path.join(ART, `${label}-annotated.html`);
       await dl.saveAs(file);
       const html = fs.readFileSync(file, 'utf8');
-      assert(/data-aht-annotations/.test(html), 'no embedded annotations block');
+      // anchor on a real tag — the INLINED plugin source mentions these
+      // strings in code/regex literals, a bare substring check would misfire
+      assert(/<script[^>]+data-aht-annotations/i.test(html), 'no embedded annotations block');
       assert(html.includes('"v":1') && html.includes('points'), 'ink missing from the saved copy');
       assert(html.includes('Format-change test'), 'deck source content missing from the copy');
       assert(!html.includes('id="aht-toolbar"'), 'live plugin DOM leaked into the copy');
+      // self-contained: the plugin source is inlined, no relative script left
+      assert(html.includes('window.RevealAutohideToolbar'), 'plugin source not inlined into the copy');
+      assert(!/<script[^>]+src=["'][^"']*reveal-autohide-toolbar/i.test(html), 'copy still references the plugin by src');
+      await p2.close();
+      // the point of the copy: it must open ANYWHERE — from file:// included
+      // (regression: a relative plugin src used to yield a blank white page)
+      const p3 = await ctx.newPage();
+      CURPAGE = p3;
+      await p3.goto('file://' + file, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p3);
+      await p3.evaluate(() => window.Reveal.slide(0));
+      await p3.waitForTimeout(600);
+      assert(await p3.evaluate(() => !!document.getElementById('aht-toolbar')), 'plugin not alive in the file:// copy');
+      assert(colored(await pixel(p3, 400, 300)), 'annotated copy did not show its ink when opened from file://');
+      await p3.close();
+      CURPAGE = page;
+    });
+    await test('save clean copy: strips the embedded block, plugin still inlined', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      // the embed fixture SHIPS an annotations block in its source — the clean
+      // copy must shed exactly that
+      await p2.goto(EMBED, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await openExportMenu(p2);
+      const [dl] = await Promise.all([
+        p2.waitForEvent('download', { timeout: 10000 }),
+        p2.locator('#aht-export-menu .aht-export-item:has-text("Save a copy")').click(),
+      ]);
+      assert(/-copy\.html$/.test(dl.suggestedFilename()), 'unexpected filename: ' + dl.suggestedFilename());
+      const file = path.join(ART, `${label}-clean-copy.html`);
+      await dl.saveAs(file);
+      const html = fs.readFileSync(file, 'utf8');
+      assert(!/<script[^>]+data-aht-annotations/i.test(html), 'clean copy still contains an annotations block');
+      assert(html.includes('window.RevealAutohideToolbar'), 'plugin source not inlined into the clean copy');
+      assert(!/<script[^>]+src=["'][^"']*reveal-autohide-toolbar/i.test(html), 'clean copy still references the plugin by src');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('menu PDF items open the print view; aht-print pops the dialog', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await openExportMenu(p2);
+      const [pop] = await Promise.all([
+        p2.waitForEvent('popup', { timeout: 10000 }),
+        p2.locator('#aht-export-menu .aht-export-item:has-text("PDF / print with ink")').click(),
+      ]);
+      // wait for the REAL document (not a transient about:blank), then stub the
+      // dialog long before the plugin's pdf-ready + settle delay fires
+      await pop.waitForURL(/print-pdf/, { waitUntil: 'domcontentloaded' });
+      await pop.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed++; }; });
+      const url = pop.url();
+      assert(/print-pdf/.test(url) && /aht-print=1/.test(url) && !/aht-ink=0/.test(url), 'with-ink print URL wrong: ' + url);
+      await pop.waitForFunction(() => window.__printed > 0, null, { timeout: 30000 });
+      await pop.close();
+      await openExportMenu(p2);
+      const [pop2] = await Promise.all([
+        p2.waitForEvent('popup', { timeout: 10000 }),
+        p2.locator('#aht-export-menu .aht-export-item:has-text("PDF / print clean")').click(),
+      ]);
+      await pop2.waitForURL(/print-pdf/, { waitUntil: 'domcontentloaded' });
+      const url2 = pop2.url();
+      assert(/print-pdf/.test(url2) && /aht-ink=0/.test(url2), 'clean print URL wrong: ' + url2);
+      await pop2.close();
       await p2.close();
       CURPAGE = page;
     });
@@ -862,6 +1022,20 @@ async function runSuite(browserType, label) {
       assert(t.boards === 1, 'board slide missing in print: ' + JSON.stringify(t));
       assert(t.svgs === 2 && t.strokes === 2, 'SVG ink wrong: ' + JSON.stringify(t));
       assert(t.pages >= 3, 'expected 3+ pdf pages, got ' + t.pages);
+      // regression: ink must be anchored to the .pdf-page at the slide box
+      // (page − slide)/2 — anchored to the SECTION it sat too low on short
+      // slides (reveal centres sections by content height) and got clipped
+      const geo = await p2.evaluate(() => {
+        const svg = document.querySelector('.aht-print-ink');
+        const page = svg.closest('.pdf-page');
+        const sr = svg.getBoundingClientRect(), pr = page.getBoundingClientRect();
+        return { inPage: svg.parentElement === page,
+          dx: sr.left - pr.left, dy: sr.top - pr.top,
+          gx: (pr.width - sr.width) / 2, gy: (pr.height - sr.height) / 2 };
+      });
+      assert(geo.inPage, 'print ink not attached to its .pdf-page');
+      approx(geo.dx, geo.gx, 3, 'print ink not centred horizontally in its page');
+      approx(geo.dy, geo.gy, 3, 'print ink not centred vertically in its page');
       await shot(p2, 'g12-print-ink');
       await p2.close();
       CURPAGE = page;
@@ -948,7 +1122,9 @@ function rewriteReveal(html, version) {
   if (/^[6-9]\./.test(version)) {
     out = out
       .replace(/(reveal\.js@[^"']+\/)plugin\/([a-z]+)\/\2\.js/g, '$1dist/plugin/$2.js')
-      .replace(/(reveal\.js@[^"']+\/)plugin\/(highlight\/[a-z-]+\.css)/g, '$1dist/plugin/$2');
+      // (?<!dist\/): 6-style paths keep the highlight/ dir, so this rule must
+      // not fire again on an already-6-style link (dist/dist/… would 404)
+      .replace(/(reveal\.js@[^"']+\/)(?<!dist\/)plugin\/(highlight\/[a-z-]+\.css)/g, '$1dist/plugin/$2');
   } else {
     out = out
       .replace(/(reveal\.js@[^"']+\/)dist\/plugin\/([a-z]+)\.js/g, '$1plugin/$2/$2.js')
@@ -979,30 +1155,143 @@ const server = http.createServer((req, res) => {
 });
 
 // ---------- main ----------
-try {
-  await new Promise((resolve, reject) => {
-    server.on('error', reject);
-    server.listen(PORT, '127.0.0.1', resolve);
-  });
-  for (const version of VERSIONS) {
-    serveVersion = version;
-    await runSuite(chromium, `chromium@${version}`);
-    await runSuite(webkit, `webkit@${version}`);
+const COMBOS = VERSIONS.flatMap((v) => ['chromium', 'webkit'].map((e) => `${e}@${v}`));
+
+// one engine × one reveal version on this process's server/port
+async function runCombo(label) {
+  const [engine, version] = label.split('@');
+  serveVersion = version;
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(PORT, '127.0.0.1', resolve);
+    });
+    await runSuite(loadEngine(engine), label);
+  } catch (e) {
+    results.push({ name: `[${CUR}] FATAL (suite aborted)`, ok: false, error: String(e && e.message || e).split('\n')[0] });
+    log(P_FATAL + String(e && e.message || e).split('\n')[0]);
+  } finally {
+    server.close();
   }
-} catch (e) {
-  results.push({ name: `[${CUR}] FATAL (suite aborted)`, ok: false, error: String(e && e.message || e).split('\n')[0] });
-  log('FATAL: ' + String(e && e.message || e).split('\n')[0]);
-} finally {
-  server.close();
 }
 
-// ---------- summary ----------
-const pass = results.filter((r) => r.ok).length;
-const fail = results.length - pass;
-log('');
-log(`==== SUMMARY: ${pass}/${results.length} passed, ${fail} failed ====`);
-for (const r of results.filter((r) => !r.ok)) log(`  ✗ ${r.name}\n    ${r.error}`);
-fs.writeFileSync(path.join(ART, 'results.json'), JSON.stringify(results, null, 2));
-fs.writeFileSync(path.join(ART, 'results.log'), logLines.join('\n') + '\n');
-log(`Artifacts: ${ART}`);
-process.exitCode = fail ? 1 : 0;
+function summarize() {
+  const pass = results.filter((r) => r.ok).length;
+  const fail = results.length - pass;
+  log('');
+  log(`==== SUMMARY: ${pass}/${results.length} passed, ${fail} failed ====`);
+  for (const r of results.filter((r) => !r.ok)) log(`  ✗ ${r.name}\n    ${r.error}`);
+  fs.writeFileSync(path.join(ART, 'results.json'), JSON.stringify(results, null, 2));
+  fs.writeFileSync(path.join(ART, 'results.log'), logLines.join('\n') + '\n');
+  log(`Artifacts: ${ART}`);
+  process.exitCode = fail ? 1 : 0;
+}
+
+if (process.env.AHT_COMBO) {
+  // ---------- worker: run one combo, hand results to the parent via file ----------
+  await runCombo(process.env.AHT_COMBO);
+  fs.writeFileSync(path.join(ART, `results-${process.env.AHT_COMBO}.json`), JSON.stringify(results, null, 2));
+  process.exitCode = results.some((r) => !r.ok) ? 1 : 0;
+} else if (process.env.AHT_SERIAL && process.env.AHT_SERIAL !== '0') {
+  // ---------- sequential fallback (single process, e.g. for headed debugging) ----------
+  for (const label of COMBOS) await runCombo(label);
+  summarize();
+} else {
+  // ---------- parent: one worker process per matrix combo, all in parallel ----------
+  const self = fileURLToPath(import.meta.url);
+  // sticky per-combo progress bars on a TTY (AHT_BARS=1/0 forces either way):
+  // PASS lines feed the bars instead of scrolling by, FAIL/FATAL still print
+  // the moment they happen — and results.log keeps every line regardless.
+  const BARS = process.env.AHT_BARS ? process.env.AHT_BARS !== '0' : !!process.stdout.isTTY;
+  // per-combo denominator: this file's own test() call sites. A couple run in
+  // loops (the G9 decks), so the real count is a bit higher — the bar's total
+  // simply grows with done and the close fills it, no drama.
+  const PER_COMBO = (fs.readFileSync(self, 'utf8').match(/await test\(/g) || []).length;
+  const prog = new Map(COMBOS.map((l) => [l, { done: 0, fail: 0, closed: false }]));
+  let shown = 0;                 // bar lines currently on screen
+  const barLine = (label) => {
+    const p = prog.get(label);
+    const total = Math.max(PER_COMBO, p.done);
+    const fill = p.closed ? 24 : Math.round((24 * p.done) / total);
+    const tail = p.closed ? (p.fail ? `✗ ${p.fail} failed` : '✓') : (p.fail ? `✗ ${p.fail}` : '');
+    const line = `  ${'█'.repeat(fill)}${'░'.repeat(24 - fill)} ${String(p.done).padStart(3)}/${total}  ${label} ${tail}`;
+    // a wrapped bar line would break the cursor-up redraw math — truncate
+    const cols = process.stdout.columns;
+    return cols && line.length >= cols ? line.slice(0, cols - 1) : line;
+  };
+  const clearBars = () => { if (shown) { process.stdout.write(`\x1b[${shown}A\x1b[J`); shown = 0; } };
+  const render = () => {
+    if (!BARS) return;
+    clearBars();
+    process.stdout.write(COMBOS.map(barLine).join('\n') + '\n');
+    shown = COMBOS.length;
+  };
+  const emit = (line) => {       // print a full line ABOVE the sticky bars
+    clearBars();
+    console.log(line);
+    render();
+  };
+  log(`Running ${COMBOS.length} matrix combos in parallel (ports ${PORT}–${PORT + COMBOS.length - 1}); AHT_SERIAL=1 for the sequential mode.`);
+  log(BARS
+    ? 'Progress bars below; failures print as they happen. Full log: test/artifacts/results.log'
+    : 'Output streams live, interleaved by line — every test line carries its [engine@version].');
+  render();
+  const outs = {};
+  await Promise.all(COMBOS.map((label, i) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [self], {
+      env: { ...process.env, AHT_COMBO: label, AHT_PORT: String(PORT + i) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    outs[label] = '';
+    let afterFail = false;       // a FAIL line is followed by its indented error line
+    const p = prog.get(label);
+    const handleLine = (line) => {
+      if (!BARS) { console.log(line); return; }
+      if (line.startsWith(P_PASS)) { p.done++; afterFail = false; render(); }
+      else if (line.startsWith(P_FAIL)) { p.done++; p.fail++; afterFail = true; emit(line); }
+      else if (afterFail && line.startsWith(P_ERR)) { afterFail = false; emit(line); }
+      else if (line.startsWith(P_FATAL)) { p.fail++; afterFail = false; emit(`[${label}] ${line}`); }
+      else afterFail = false;    // swallowed on screen — results.log keeps it
+    };
+    // one line buffer PER stream: a stderr chunk arriving mid-stdout-line must
+    // not splice into it and hide a PASS/FAIL prefix from the parser
+    const bufs = { out: '', err: '' };
+    const onData = (key) => (d) => {
+      outs[label] += d;
+      bufs[key] += d;
+      const lines = bufs[key].split('\n');
+      bufs[key] = lines.pop();    // hold back the unterminated tail
+      for (const line of lines) handleLine(line);
+    };
+    child.stdout.setEncoding('utf8');   // decode multibyte chars across chunk splits
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', onData('out'));
+    child.stderr.on('data', onData('err'));
+    child.on('close', (code) => {
+      if (bufs.out) handleLine(bufs.out);
+      if (bufs.err) handleLine(bufs.err);
+      const file = path.join(ART, `results-${label}.json`);
+      let combo = null;
+      try { combo = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}   // missing or truncated
+      fs.rmSync(file, { force: true });
+      if (combo) {
+        results.push(...combo);
+        // an all-green file plus a nonzero exit = the worker crashed AFTER its
+        // run (teardown) — the file alone would report a fully green matrix
+        if (code !== 0 && combo.every((r) => r.ok)) {
+          results.push({ name: `[${label}] FATAL (worker crashed after its run, exit ${code})`, ok: false, error: 'teardown crash — see results.log' });
+          if (BARS) { p.fail++; emit(`  FATAL [${label}] worker crashed after its run (exit ${code})`); }
+        }
+      } else {
+        results.push({ name: `[${label}] FATAL (worker died, exit ${code})`, ok: false, error: 'worker wrote no results' });
+        if (BARS) { p.fail++; emit(`  FATAL [${label}] worker died (exit ${code}) — see results.log`); }
+      }
+      p.closed = true;
+      render();
+      resolve();
+    });
+  })));
+  // results.log stays readable: one intact block per combo, in matrix order
+  for (const label of COMBOS) logLines.push(outs[label].trimEnd());
+  summarize();
+}

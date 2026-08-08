@@ -6,10 +6,54 @@
   <title>reveal.js-autohide-toolbar — demo</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/theme/white.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/highlight/monokai.css" />
   <style>
     /* optional theming — delete this block for the plugin's defaults */
     :root { --aht-accent: #2563eb; }
     .demo-hint { font-size: .6em; color: #666; }
+    .demo-box { background: #2563eb; color: #fff; border-radius: 12px;
+                display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+    /* palette slide: white/dark surface × direct/projector view */
+    .palgrid { display: grid; grid-template-columns: auto 1fr 1fr;
+               gap: 8px 12px; align-items: center; width: 94%; margin: .6em auto; }
+    .palgrid .plab { font-size: .45em; color: #444; text-align: right; }
+    .palgrid .phead { font-size: .45em; color: #444; text-align: center; }
+    .palgrid .phead input { width: 90px; vertical-align: middle; }
+    .pal-pane { border-radius: 10px; padding: 9px 10px; position: relative;
+                display: flex; gap: 5px; justify-content: space-between; }
+    .pal-pane.light { background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+    .pal-pane.dark  { background: #000; }
+    .pal-pane i { width: 21px; height: 21px; border-radius: 50%;
+                  box-shadow: inset 0 0 0 1px rgba(128,128,128,.4); }
+    /* projector column = same math as demo/palette.html: contrast() lifts the
+       black floor, saturate() washes the gamut, ::after = room light on the wall */
+    .pal-pane.projector { filter: contrast(.75) saturate(.65) brightness(1.05); }
+    .pal-pane.projector::after { content: ''; position: absolute; inset: 0; border-radius: 10px;
+                              background: #fff; opacity: var(--roomlight, .4); pointer-events: none; }
+
+    /* PPT-style letterbox (pure CSS theming, not the plugin): black bars,
+       white slide box. reveal itself never shows a letterbox — it paints the
+       theme/slide background across the whole viewport. Everything is scoped
+       to html:not(.print-pdf): reveal's print view copies the viewport's
+       COMPUTED background onto every PDF page, so an unscoped black viewport
+       would print black pages. */
+    @media screen {
+      html:not(.print-pdf) .reveal-viewport { background: #000; }
+      html:not(.print-pdf) .reveal .slides { background: var(--r-background-color, #fff); }
+      /* keep data-background slides (colour/gradient/image/video) inside the
+         same box — reveal would paint them across the whole viewport.
+         Assumes the 16:9 + margin:0 config below. */
+      html:not(.print-pdf) .reveal > .backgrounds {
+        width: min(100vw, calc(100vh * 16 / 9));
+        height: min(100vh, calc(100vw * 9 / 16));
+        top: 50%; left: 50%; transform: translate(-50%, -50%);
+      }
+      /* ...and let them show through the slide-box backdrop */
+      .reveal:has(section.present[data-background], section.present[data-background-color],
+                  section.present[data-background-gradient], section.present[data-background-image],
+                  section.present[data-background-video], section.present[data-background-iframe])
+        .slides { background: transparent; }
+    }
   </style>
 </head>
 <body>
@@ -18,21 +62,42 @@
 
     <section>
       <h2>reveal.js-autohide-toolbar</h2>
-      <p>Move the mouse to the <strong>bottom-left corner</strong> — the toolbar appears.</p>
-      <p class="demo-hint">Press <kbd>A</kbd> (or the pen button) and draw on this slide.<br/>
-      <kbd>E</kbd> eraser · <kbd>Ctrl+Z</kbd> undo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.<br/>
-      The board button inserts a blank blackboard slide (flip it to white with
-      the surface toggle); the 💾 buttons save an annotated copy of the deck or
-      export/import the ink — and <code>?print-pdf</code> prints it all.</p>
-      <aside class="notes">Speaker notes work: press S or use the toolbar button.</aside>
+      <p>A presenter toolkit for <a href="https://revealjs.com">reveal.js</a> —
+      and a tiny tour of what reveal itself can do.</p>
+      <p class="demo-hint">Move the mouse to the <strong>bottom-left corner</strong> — the toolbar appears.<br/>
+      Navigate with <kbd>→</kbd> / <kbd>←</kbd>, or just tap the right/left half on touch.</p>
+      <aside class="notes">Welcome! Press S for this speaker view — it stays in sync with the audience window, ink included.</aside>
     </section>
 
     <section>
-      <h2>Ink sticks to the slide</h2>
-      <p>Draw something, then <strong>resize the window</strong> — the ink stays
-      on the slide content through any letterboxing. Leave the slide and come
-      back: it's still here. Reload: still here.</p>
-      <aside class="notes">Strokes are stored per slide as ratio coordinates and persisted to localStorage.</aside>
+      <h2>Draw on any slide</h2>
+      <p>Press <kbd>A</kbd> (or the ✏️ button) and write right here.</p>
+      <p class="demo-hint"><kbd>E</kbd> eraser (per stroke!) · <kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.<br/>
+      Pick colours and pen widths in the bar; drag it by its grip, minimize it,
+      park it anywhere. Ink survives reloads — and even editing the deck later.</p>
+      <aside class="notes">Strokes are stored as ratios and keyed to slide content, so they survive resize, reload, and deck edits.</aside>
+    </section>
+
+    <section>
+      <h2>The ink palette</h2>
+      <p class="demo-hint">Three neutrals + five hues, each as an <strong>ink</strong> (dark
+      Tailwind&nbsp;700 — for white slides) / <strong>chalk</strong> (light Tailwind&nbsp;300 —
+      for dark boards) pair.</p>
+      <div class="palgrid">
+        <span></span>
+        <span class="phead">direct view</span>
+        <span class="phead">projector* · room light <input type="range" id="pal-light" min="0" max="40" value="40"></span>
+        <span class="plab">white&nbsp;slide</span>
+        <div class="pal-pane light"></div>
+        <div class="pal-pane light projector"></div>
+        <span class="plab">dark&nbsp;board</span>
+        <div class="pal-pane dark"></div>
+        <div class="pal-pane dark projector"></div>
+      </div>
+      <p class="demo-hint">*simulated: limited contrast, washed-out colours, room light
+      falling on the wall. Even “black” only reaches mid-gray there — the chalk shades
+      are what still read on a projected dark board.</p>
+      <aside class="notes">The palette was picked against this projector simulation: ink shades keep contrast on white, chalk shades keep contrast on a projector-washed board.</aside>
     </section>
 
     <section>
@@ -48,11 +113,103 @@
     </section>
 
     <section>
-      <h2>Touch</h2>
-      <p>On a phone or tablet: the toolbar is always visible (no hover),
-      <strong>swipe</strong> or <strong>tap the left/right half</strong> to navigate,
-      and the pen works with your finger or stylus.</p>
-      <a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a>
+      <section>
+        <h2>Vertical slides</h2>
+        <p>reveal can nest slides — press <kbd>↓</kbd>.</p>
+        <p class="demo-hint">Great for optional detail: the audience path goes
+        left-to-right, the deep-dives hide below.</p>
+      </section>
+      <section>
+        <h3>Down here!</h3>
+        <p>Ink works on vertical slides too — every slide keeps its own drawings.</p>
+        <aside class="notes">Each leaf slide has its own ink store.</aside>
+      </section>
+    </section>
+
+    <section>
+      <h2>Fragments</h2>
+      <p>Reveal content step by step:</p>
+      <ul>
+        <li class="fragment">appear…</li>
+        <li class="fragment highlight-red">highlight…</li>
+        <li class="fragment grow">grow…</li>
+        <li class="fragment fade-up">or slide in.</li>
+      </ul>
+      <p class="demo-hint">Each step is one arrow press — and each gets its own page in the PDF export.</p>
+    </section>
+
+    <section data-auto-animate>
+      <h2>Auto-Animate</h2>
+      <div class="demo-box" data-id="box" style="width: 90px; height: 90px;">1</div>
+      <p class="demo-hint">Press <kbd>→</kbd> and watch the box…</p>
+    </section>
+    <section data-auto-animate>
+      <h2>Auto-Animate</h2>
+      <div class="demo-box" data-id="box" style="width: 320px; height: 120px; background: #059669;">…morph by itself</div>
+      <p class="demo-hint">Matching <code>data-id</code> elements animate between slides — no code.</p>
+    </section>
+
+    <section data-markdown>
+      <script type="text/template">
+        ## Write slides in Markdown
+
+        Just mark a section with `data-markdown`:
+
+        - *emphasis*, **bold**, `code`
+        - lists, [links](https://revealjs.com/markdown/), images, tables
+
+        Authoring stays in your editor — reveal renders it.
+      </script>
+    </section>
+
+    <section>
+      <h2>Math</h2>
+      <p>LaTeX typesetting via the math plugin (KaTeX or MathJax):</p>
+      <p>\[ e^{i\pi} + 1 = 0 \qquad\qquad \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi} \]</p>
+      <p class="demo-hint">Write LaTeX right in your HTML — inline math like
+      \( a^2 + b^2 = c^2 \) works too. (And yes, you can draw on formulas.)</p>
+      <aside class="notes">The math plugin ships with reveal — one script tag, one plugin entry.</aside>
+    </section>
+
+    <section>
+      <h2>Code with highlighting</h2>
+      <pre><code class="language-js" data-trim data-line-numbers="1|3-4">
+        Reveal.initialize({
+          hash: true,
+          // walk through code line by line:
+          plugins: [ RevealHighlight, RevealAutohideToolbar ],
+        });
+      </code></pre>
+      <p class="demo-hint">Arrow keys step through the highlighted lines.</p>
+    </section>
+
+    <section data-background-gradient="linear-gradient(to bottom, #1e3a8a, #0ea5e9)">
+      <h2 style="color:#fff">Backgrounds</h2>
+      <p style="color:#e0f2fe">Any slide can have a colour, gradient, image,
+      video or iframe background — this one is a CSS gradient.</p>
+    </section>
+
+    <section>
+      <h2>Presenter tools</h2>
+      <ul style="font-size:.75em">
+        <li><strong>Board slides</strong> — the ▦+ button inserts a whiteboard
+          (or blackboard) in the deck's slide format, uncounted.</li>
+        <li><strong>Speaker view</strong> (<kbd>S</kbd>) — notes, timer, next slide; ink syncs live.</li>
+        <li><strong>Overview</strong> (<kbd>O</kbd>) · <strong>Fullscreen</strong> (<kbd>F</kbd>) · slide counter.</li>
+        <li><strong>Download / print menu</strong> (the printer/download button) —
+          save a self-contained HTML copy (clean or with your ink baked in),
+          or export a <strong>PDF</strong>, with ink as crisp vectors or without:
+          one click opens the print dialog for you.</li>
+      </ul>
+      <aside class="notes">The whole toolkit is one dependency-free file.</aside>
+    </section>
+
+    <section>
+      <h2>That's the tour</h2>
+      <p>One file, no dependencies:</p>
+      <p><a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a></p>
+      <p class="demo-hint">reveal.js basics: <a href="https://revealjs.com">revealjs.com</a> ·
+      this deck is the plugin's test subject — it runs in CI on Chromium & WebKit × reveal 5 & 6.</p>
     </section>
 
   </div>
@@ -60,17 +217,42 @@
 
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/notes.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/markdown.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/math.js"></script>
 <script src="../reveal-autohide-toolbar.js"></script>
 <script>
   Reveal.initialize({
-    width: 960,
+    width: 960,               // 16:9 — PowerPoint's slide box in points (1pt = 1px)
     height: 540,
+    margin: 0,                // edge-to-edge like PPT & co. (reveal default: 0.04)
+    maxScale: 4,              // let big displays use their pixels (reveal default caps at 2)
     hash: true,
     controls: false,          // the plugin's toolbar replaces the arrows + slide number
     slideNumber: false,
     scrollActivationWidth: 0, // stay in slide mode on phones (keeps toolbar + ink)
-    plugins: [ RevealNotes, RevealAutohideToolbar ],
+    plugins: [ RevealMarkdown, RevealHighlight, RevealMath.KaTeX, RevealNotes, RevealAutohideToolbar ],
     // autohideToolbar: { ... }        // all options are optional — see the README
+  });
+
+  // "The ink palette" slide: fill the four panes from the plugin's own swatch
+  // buttons (so this slide can never go stale against the real palette) and
+  // let the slider set how much room light washes the projector column.
+  Reveal.on('ready', () => {
+    // live view: read the palette straight from the plugin's own swatches. In
+    // ?print-pdf / ?view=scroll the plugin builds no UI — fall back to a copy
+    // of its DEFAULTS.colors (keep in sync with reveal-autohide-toolbar.js).
+    let palColors = Array.from(document.querySelectorAll('#aht-bar .aht-swatch'), (b) => b.dataset.color);
+    if (!palColors.length) palColors = ['#FFFFFF', '#8E8E93', '#000000', '#B91C1C', '#FCA5A5', '#B45309',
+                                        '#FCD34D', '#15803D', '#86EFAC', '#1D4ED8', '#93C5FD', '#7E22CE', '#D8B4FE'];
+    document.querySelectorAll('.pal-pane').forEach((pane) => {
+      pane.innerHTML = palColors.map((c) => `<i style="background:${c}"></i>`).join('');
+    });
+  });
+  document.getElementById('pal-light').addEventListener('input', (e) => {
+    document.querySelectorAll('.pal-pane.projector').forEach((pane) => {
+      pane.style.setProperty('--roomlight', e.target.value / 100);
+    });
   });
 </script>
 </body>

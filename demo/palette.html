@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>palette lab — which ink colors?</title>
+<style>
+  body { font: 15px/1.5 -apple-system, sans-serif; margin: 2rem; background: #f3f4f6; }
+  h1 { font-size: 1.3rem; } h2 { font-size: 1.05rem; margin: 1.6rem 0 .4rem; }
+  .row { display: flex; gap: 10px; align-items: flex-start; margin: .4rem 0 .8rem; }
+  .swx { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .sw { width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+  .swx small { font: 10px/1.3 ui-monospace, monospace; color: #666; text-align: center; }
+  .panes { display: flex; gap: 12px; }
+  .pane { flex: 1; border-radius: 10px; padding: 6px 10px; position: relative; }
+  .pane.light { background: #ffffff; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .pane.dark  { background: #000000; }
+  /* Projector simulation: contrast() lifts the projector's black floor, saturate()
+     models gamut washout, the ::after veil is ambient room light on the wall. */
+  .pane::after { content: ''; position: absolute; inset: 0; border-radius: 10px;
+    background: #fff; opacity: 0; pointer-events: none; }
+  body.projector .pane { filter: contrast(.75) saturate(.65) brightness(1.05); }
+  body.projector .pane::after { opacity: var(--ambient, .18); }
+  .controls { display: flex; gap: 18px; align-items: center; margin: .6rem 0 1rem;
+    font-size: .9rem; user-select: none; }
+  .controls input[type=range] { vertical-align: middle; width: 120px; }
+  svg { width: 100%; height: 90px; display: block; }
+  path { fill: none; stroke-width: 5; stroke-linecap: round; }
+  .note { color: #555; font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>Ink palette candidates — strokes on a white slide vs. a dark board</h1>
+<p class="note">Same squiggle, every palette colour, both surfaces. Pick by eye.</p>
+<div class="controls">
+  <label><input type="checkbox" id="projector"> Projector simulation (limited contrast, washed-out colours)</label>
+  <label>room light <input type="range" id="ambient" min="0" max="40" value="18"> <span id="ambientVal">18</span>%</label>
+</div>
+<div id="out"></div>
+<script>
+  const PALETTES = [
+    ['★ ADOPTED default (13) = row J — 3 neutrals + 5 hues, each ink (Tailwind 700) | chalk (Tailwind 300)',
+      ['#FFFFFF','#8E8E93','#000000','#B91C1C','#FCA5A5','#B45309','#FCD34D','#15803D','#86EFAC','#1D4ED8','#93C5FD','#7E22CE','#D8B4FE'], '★'],
+    ['A — old default: Office "Standard Colors" (12)',
+      ['#FFFFFF','#000000','#C00000','#FF0000','#FFC000','#FFFF00','#92D050','#00B050','#00B0F0','#0070C0','#002060','#7030A0'], 'A'],
+    ['B — Keynote presenter ink, sampled from the screenshot (7)',
+      ['#FFFFFF','#000000','#E21415','#FFB902','#0ED102','#1668FF','#D339F8'], 'B'],
+    ['C — Google Slides annotation pens, sampled (4)',
+      ['#FE5252','#000000','#4286F5','#0E9C50'], 'C'],
+    ['D — CANDIDATE: calm column from Tailwind 700 (Wathan/Schoger, "Refactoring UI") | luminous Keynote',
+      ['#FFFFFF','#8E8E93','#000000','#B91C1C','#E21415','#B45309','#FFB902','#15803D','#0ED102','#1D4ED8','#1668FF','#7E22CE','#D339F8'], 'D'],
+    ['E — Apple system colours (HIG): one per hue, tuned for light AND dark mode',
+      ['#FFFFFF','#8E8E93','#000000','#FF3B30','#FF9500','#FFCC00','#34C759','#007AFF','#AF52DE','#A2845E'], 'E'],
+    ['F — Solarized accents (Ethan Schoonover): famously designed for both backgrounds',
+      ['#DC322F','#CB4B16','#B58900','#859900','#2AA198','#268BD2','#6C71C4','#D33682'], 'F'],
+    ['G — CANDIDATE: all-Tailwind pairs — calm 700 | luminous 400 (Tailwind’s own dark-mode level)',
+      ['#FFFFFF','#8E8E93','#000000','#B91C1C','#F87171','#B45309','#FBBF24','#15803D','#4ADE80','#1D4ED8','#60A5FA','#7E22CE','#C084FC'], 'G'],
+    ['H — CANDIDATE: projector-hardened Tailwind — calm 800 | luminous 300 (one step outward each)',
+      ['#FFFFFF','#8E8E93','#000000','#991B1B','#FCA5A5','#92400E','#FCD34D','#166534','#86EFAC','#1E40AF','#93C5FD','#6B21A8','#D8B4FE'], 'H'],
+    ['I — inverse-optimal at 40% room light (pure math, no design system): ink-dark | chalk per hue',
+      ['#FFFFFF','#8E8E93','#000000','#5C0000','#FFA3A3','#5C3A00','#FFDDA3','#005C22','#A3FFC5','#00235C','#A3C6FF','#2F005C','#D2A3FF'], 'I'],
+    ['J — CANDIDATE: middle way — calm 700 (screen elegance) | luminous 300 (projector-proof)',
+      ['#FFFFFF','#8E8E93','#000000','#B91C1C','#FCA5A5','#B45309','#FCD34D','#15803D','#86EFAC','#1D4ED8','#93C5FD','#7E22CE','#D8B4FE'], 'J'],
+  ];
+  const squiggle = (x) => `M${x} 70 q 10 -55 20 -25 q 8 22 16 -8 q 7 -25 14 -3 q 6 18 12 2`;
+  const out = document.getElementById('out');
+  for (const [name, colors, tag] of PALETTES) {
+    const h = document.createElement('h2'); h.textContent = name; out.appendChild(h);
+    const row = document.createElement('div'); row.className = 'row';
+    colors.forEach((c, i) => {
+      const wrap = document.createElement('div'); wrap.className = 'swx';
+      const d = document.createElement('div'); d.className = 'sw'; d.style.background = c;
+      const lab = document.createElement('small'); lab.innerHTML = `<b>${tag}${i + 1}</b><br>${c}`;
+      wrap.appendChild(d); wrap.appendChild(lab); row.appendChild(wrap);
+    });
+    out.appendChild(row);
+    const panes = document.createElement('div'); panes.className = 'panes';
+    for (const cls of ['light', 'dark']) {
+      const p = document.createElement('div'); p.className = 'pane ' + cls;
+      const W = colors.length * 70;
+      p.innerHTML = `<svg viewBox="0 0 ${W} 90">` +
+        colors.map((c, i) => `<path d="${squiggle(8 + i * 70)}" stroke="${c}"/>`).join('') + '</svg>';
+      panes.appendChild(p);
+    }
+    out.appendChild(panes);
+  }
+  const projector = document.getElementById('projector');
+  const ambient = document.getElementById('ambient');
+  const sync = () => {
+    document.body.classList.toggle('projector', projector.checked);
+    document.body.style.setProperty('--ambient', ambient.value / 100);
+    document.getElementById('ambientVal').textContent = ambient.value;
+  };
+  projector.onchange = sync; ambient.oninput = sync;
+</script>
+</body>
+</html>
