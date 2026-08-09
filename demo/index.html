@@ -7,11 +7,14 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/theme/white.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/highlight/monokai.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <!-- Pretendard (Korean/Latin, weights 100–900). Note: Pretendard has no
+       width axis, so the S "condensed" preset falls back to letter-spacing
+       tightening only — set --aht-font-condensed to a condensed family for true
+       condensed text. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <style>
-    /* ---------- sober slide master (Noto Sans, navy titles, square bullets) ----------
+    /* ---------- sober slide master (Pretendard, navy titles, square bullets) ----------
        plain CSS theming layered on reveal's white theme; delete for the defaults. */
     :root {
       /* SKKU official palette — skku.edu/skku/about/symbol */
@@ -19,10 +22,12 @@
       --skku-green: #8DC63F;              /* Pantone 367C  — the signature green */
       --skku-green-dark: #124633;         /* Pantone 3435C — communication/coop. */
       --deck-navy: #1F3864;            /* title colour — tweak to taste */
-      --deck-font: 'Noto Sans', system-ui, -apple-system, sans-serif;
+      --deck-font: 'Pretendard', system-ui, -apple-system, sans-serif;
       --deck-muted: #9aa3ad;
       --aht-accent: var(--skku-orange);   /* toolbar / active-tool highlight */
       --aht-font: var(--deck-font);
+      --aht-font-condensed: var(--deck-font); /* Pretendard has no width axis, so the
+                                                 S preset only tightens letter-spacing */
     }
     .reveal { font-family: var(--deck-font);
       --r-main-font: var(--deck-font); --r-heading-font: var(--deck-font);
