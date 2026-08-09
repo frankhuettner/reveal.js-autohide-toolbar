@@ -14,8 +14,6 @@ toolbar** with everything you need at the podium.
   washed-out projectors, the light 300 shade reads on dark boards even when
   a projector lifts their black to gray), three pen widths.
   Ink lands exactly under the cursor at any window size, zoom, or letterboxing.
-  While annotating, a subtle dashed outline marks the writable area (the slide
-  box — themable via `--aht-edge`), on boards too.
 - 🖼️ **Board slides** — insert a blank whiteboard (or flip it to a dark
   blackboard) as a *real slide* after the current one. The board keeps the
   **deck's slide format**: surface and writable area are the slide box, just
@@ -133,7 +131,7 @@ everything else (delete it to get reveal's full-bleed behaviour back, e.g.
 for video walls). And the `html:not(.print-pdf)` scope is not cosmetic:
 reveal's print view copies the viewport's *computed* background onto every
 PDF page, so an unscoped black viewport would print black pages. (For the
-plugin's own colours — accent, toolbar, dashed edge, board surface — see
+plugin's own colours — accent, toolbar, board surface — see
 [Theming](#theming) below.)
 
 **Plugin.** Nothing above needs this plugin — it adds behaviour only, and
@@ -284,7 +282,6 @@ CSS custom properties, set on `:root` in your deck (values shown are the default
   --aht-panel-bg: rgba(10,18,34,.82);  /* navigation toolbar */
   --aht-bar-bg: rgba(6,18,42,.92);     /* annotation toolbar */
   --aht-board-bg: #000000;             /* blackboard colour */
-  --aht-edge: rgba(125,135,155,.55);   /* dashed writable-area outline while annotating */
   --aht-z: 30;                         /* base z-index */
 }
 ```

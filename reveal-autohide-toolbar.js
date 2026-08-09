@@ -92,7 +92,6 @@
  *   --aht-panel-bg  navigation toolbar background    (default rgba(10,18,34,.82))
  *   --aht-bar-bg    annotation toolbar background    (default rgba(6,18,42,.92))
  *   --aht-board-bg  blackboard colour                (default #000000)
- *   --aht-edge      dashed writable-area outline     (default rgba(125,135,155,.55))
  *   --aht-z         base z-index                     (default 30)
  *
  * Keys: A annotate · E eraser · Ctrl+Z undo · Ctrl+Shift+Z redo ·
@@ -160,10 +159,6 @@
   const CSS = `
 #aht-canvas { position: fixed; z-index: var(--aht-z, 30); pointer-events: none; touch-action: none; background: transparent; }
 #aht-canvas.active { pointer-events: auto; cursor: ${cur(cursorSvg(PEN_D, '#FCD34D'))} 2 22, crosshair; }
-/* while annotating, a subtle dashed outline shows WHERE ink can go (the slide
-   box) — the deck's letterbox margins are otherwise invisible on a plain
-   background. Boards share the same box, so the outline applies there too. */
-#aht-canvas.active { outline: 2px dashed var(--aht-edge, rgba(125, 135, 155, .55)); outline-offset: -2px; }
 #aht-canvas.active.erasing { cursor: ${cur(cursorSvg(ERASER_D, '#F4A3A3'))} 6 20, cell; }
 
 /* board slides keep the deck's slide format: the SECTION is the surface,
