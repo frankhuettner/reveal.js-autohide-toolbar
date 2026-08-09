@@ -156,6 +156,31 @@ async function openExportMenu(page) {
   await page.waitForTimeout(150);
   assert(await page.evaluate(() => !!document.getElementById('aht-export-menu')), 'export menu did not open');
 }
+// open the export menu, click "Save portable copy", save the download as ART/<name>
+async function downloadPortable(page, name) {
+  await openExportMenu(page);
+  const [dl] = await Promise.all([
+    page.waitForEvent('download', { timeout: 10000 }),
+    page.locator('#aht-export-menu .aht-export-item:has-text("Save portable copy")').click(),
+  ]);
+  const file = path.join(ART, name);
+  await dl.saveAs(file);
+  return { dl, file };
+}
+// turn on annotation + the Text tool, click the overlay at (x,y) to drop a box,
+// type into it (does NOT commit — caller presses Escape or clicks away);
+// the text layer is placed to the exact same rect as the canvas
+async function typeAt(page, x, y, text) {
+  await page.evaluate(() => { window.AutohideToolbar.enable(true); window.AutohideToolbar.setTool('text'); });
+  await page.waitForTimeout(100);
+  const b = await canvasBox(page);
+  await page.mouse.click(b.x + x, b.y + y);
+  await page.waitForTimeout(120);
+  if (text) await page.keyboard.type(text);
+  await page.waitForTimeout(120);
+}
+const textItems = (page) => page.evaluate(() => Array.from(
+  document.querySelectorAll('#aht-text-layer .aht-text-item .aht-text-edit'), (e) => e.textContent));
 
 // ---------- the full suite, parameterized by engine ----------
 async function runSuite(browserType, label) {
@@ -905,7 +930,7 @@ async function runSuite(browserType, label) {
       await p2.close();
       CURPAGE = page;
     });
-    await test('save annotated copy: downloaded HTML embeds the ink, source intact', async () => {
+    await test('save portable copy: bakes ink as SVG (no JSON block), revives from file://', async () => {
       const p2 = await ctx.newPage();
       CURPAGE = p2;
       await p2.goto(DEMO, { waitUntil: 'networkidle' });
@@ -918,19 +943,14 @@ async function runSuite(browserType, label) {
       await draw(p2, [[300, 300], [500, 300]]);
       await p2.keyboard.press('Escape');   // leave annotation, then export via menu
       await p2.waitForTimeout(200);
-      await openExportMenu(p2);
-      const [dl] = await Promise.all([
-        p2.waitForEvent('download', { timeout: 10000 }),
-        p2.locator('#aht-export-menu .aht-export-item:has-text("Save annotated copy")').click(),
-      ]);
-      assert(/-annotated\.html$/.test(dl.suggestedFilename()), 'unexpected filename: ' + dl.suggestedFilename());
-      const file = path.join(ART, `${label}-annotated.html`);
-      await dl.saveAs(file);
+      const { dl, file } = await downloadPortable(p2, `${label}-portable.html`);
+      assert(/-portable\.html$/.test(dl.suggestedFilename()), 'unexpected filename: ' + dl.suggestedFilename());
       const html = fs.readFileSync(file, 'utf8');
-      // anchor on a real tag — the INLINED plugin source mentions these
-      // strings in code/regex literals, a bare substring check would misfire
-      assert(/<script[^>]+data-aht-annotations/i.test(html), 'no embedded annotations block');
-      assert(html.includes('"v":1') && html.includes('points'), 'ink missing from the saved copy');
+      // ink is baked as a static inline SVG with a proper root, not a JSON block
+      assert(/<svg[^>]+data-aht-ink/i.test(html), 'no baked ink SVG in the portable copy');
+      assert(/<path[^>]+data-aht-a/i.test(html) || /<circle[^>]+data-aht-a/i.test(html), 'baked ink path/circle missing');
+      assert(/viewBox=/.test(html) && /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(html), 'baked SVG missing root attrs');
+      assert(!/<script[^>]+data-aht-annotations/i.test(html), 'portable copy should not carry a JSON annotations block');
       assert(html.includes('Format-change test'), 'deck source content missing from the copy');
       assert(!html.includes('id="aht-toolbar"'), 'live plugin DOM leaked into the copy');
       // self-contained: the plugin source is inlined, no relative script left
@@ -946,7 +966,43 @@ async function runSuite(browserType, label) {
       await p3.evaluate(() => window.Reveal.slide(0));
       await p3.waitForTimeout(600);
       assert(await p3.evaluate(() => !!document.getElementById('aht-toolbar')), 'plugin not alive in the file:// copy');
-      assert(colored(await pixel(p3, 400, 300)), 'annotated copy did not show its ink when opened from file://');
+      // auto-revive: the baked wrapper is parsed into the model and stripped, ink
+      // ends up drawn on the canvas
+      assert(await p3.evaluate(() => document.querySelectorAll('[data-aht-flat]').length === 0), 'flat wrapper not stripped on revive');
+      assert(colored(await pixel(p3, 400, 300)), 'portable copy did not revive its ink onto the canvas');
+      await p3.close();
+      CURPAGE = page;
+    });
+    await test('highlighter round-trips: baked with opacity + data-aht-hl, revives translucent', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => { window.AutohideToolbar.enable(true); window.AutohideToolbar.setTool('highlighter'); });
+      await p2.waitForTimeout(150);
+      await draw(p2, [[300, 300], [500, 300]]);
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(200);
+      const { file } = await downloadPortable(p2, `${label}-portable-hl.html`);
+      const html = fs.readFileSync(file, 'utf8');
+      // the marker bakes as an opacity-carrying, hl-tagged path inside the ink SVG
+      assert(/<svg[^>]+data-aht-ink/i.test(html), 'no baked ink SVG in the highlighter copy');
+      assert(/<path[^>]+data-aht-hl="1"/i.test(html) || /data-aht-hl="1"[^>]*\/?>/i.test(html), 'highlighter path not tagged data-aht-hl');
+      assert(/stroke-opacity=/i.test(html), 'highlighter path baked without stroke-opacity');
+      await p2.close();
+      // reopen the copy: it revives as a translucent stroke (present but not opaque)
+      const p3 = await ctx.newPage();
+      CURPAGE = p3;
+      await p3.goto('file://' + file, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p3);
+      await p3.evaluate(() => window.Reveal.slide(0));
+      await p3.waitForTimeout(600);
+      // translucent on revive = it came back a highlighter, not a plain (opaque) pen stroke
+      const band = await pixel(p3, 400, 300);
+      assert(band[3] > 40 && band[3] < 170, 'revived highlighter is not translucent (alpha ' + band[3] + ')');
       await p3.close();
       CURPAGE = page;
     });
@@ -1038,6 +1094,542 @@ async function runSuite(browserType, label) {
       approx(geo.dy, geo.gy, 3, 'print ink not centred vertically in its page');
       await shot(p2, 'g12-print-ink');
       await p2.close();
+      CURPAGE = page;
+    });
+
+    log(`=== ${label} · G13 typed text + flatten/revive ===`);
+    await test('text tool: create, type, commit — a box persists across reload', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 260, 220, 'Hello world');
+      await p2.keyboard.press('Escape');   // commit (leaves the box, still exits edit)
+      await p2.waitForTimeout(150);
+      let items = await textItems(p2);
+      assert(items.length === 1 && items[0] === 'Hello world', 'text not created/committed: ' + JSON.stringify(items));
+      // persists (localStorage) and re-renders on a cold load, no annotation needed
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      items = await textItems(p2);
+      assert(items.length === 1 && items[0] === 'Hello world', 'text did not persist across reload: ' + JSON.stringify(items));
+      await shot(p2, 'g13-text');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('typing e/x/a into a box types literally (tool keys are swallowed)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 300, 260, 'exam');
+      // still editing → the deck must not have toggled eraser/clear/etc.
+      const t = await p2.evaluate(() => ({
+        editing: !!window.getSelection && document.activeElement && document.activeElement.isContentEditable,
+        boards: document.querySelectorAll('[data-aht-board]').length,
+      }));
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(120);
+      const items = await textItems(p2);
+      assert(items.length === 1 && items[0] === 'exam', 'literal typing failed: ' + JSON.stringify(items));
+      assert(t.boards === 0, 'a tool key leaked to the deck while typing');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('empty box is discarded; × deletes; undo/redo restore text', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      // empty box, click away → discarded
+      await typeAt(p2, 200, 200, '');
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(120);
+      assert((await textItems(p2)).length === 0, 'empty box was not discarded');
+      // create one, then delete via the × while editing (tools are visible)
+      await typeAt(p2, 300, 300, 'Zap');
+      await p2.locator('#aht-text-layer .aht-text-item.editing .aht-text-del').click();
+      await p2.waitForTimeout(120);
+      assert((await textItems(p2)).length === 0, '× did not delete the box');
+      // undo brings it back, redo removes it again
+      await p2.evaluate(() => window.AutohideToolbar.undo());
+      await p2.waitForTimeout(120);
+      assert(JSON.stringify(await textItems(p2)) === JSON.stringify(['Zap']), 'undo did not restore the text');
+      await p2.evaluate(() => window.AutohideToolbar.redo());
+      await p2.waitForTimeout(120);
+      assert((await textItems(p2)).length === 0, 'redo did not re-delete the text');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('clear-slide (X) removes text as well as ink', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 320, 300, 'Gone');
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(120);
+      // draw some ink too, then clear the slide
+      await p2.evaluate(() => window.AutohideToolbar.setTool('pen'));
+      await draw(p2, [[300, 340], [520, 340]]);
+      await p2.evaluate(() => window.AutohideToolbar.clearSlide());
+      await p2.waitForTimeout(150);
+      assert((await textItems(p2)).length === 0, 'clear-slide left text behind');
+      assert(await inkCount(p2) < 20, 'clear-slide left ink behind');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('portable copy bakes text as editable HTML (not vectorized) + revives', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 280, 240, 'Key takeaway');
+      await p2.keyboard.press('Escape');
+      // ink too, to prove both bake together
+      await p2.evaluate(() => window.AutohideToolbar.setTool('pen'));
+      await draw(p2, [[300, 360], [520, 360]]);
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(150);
+      const { file } = await downloadPortable(p2, `${label}-portable-text.html`);
+      const html = fs.readFileSync(file, 'utf8');
+      // text is a real HTML element carrying the words as text content — NOT an
+      // <svg><text> and NOT inside a <script>
+      assert(/<div[^>]+class="aht-text"[^>]*>Key takeaway<\/div>/i.test(html)
+        || /<div[^>]+data-aht-text[^>]*>Key takeaway<\/div>/i.test(html), 'text not baked as an editable HTML element: ' + (html.match(/aht-text[\s\S]{0,80}/) || [''])[0]);
+      assert(!/<text[\s>]/i.test(html), 'text was vectorized to <text> (should stay HTML)');
+      assert(/<svg[^>]+data-aht-ink/i.test(html), 'ink SVG missing from the copy');
+      await p2.close();
+      // reopen → text revived as an editable box on the right slide, wrapper gone
+      const p3 = await ctx.newPage();
+      CURPAGE = p3;
+      await p3.goto('file://' + file, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p3);
+      await p3.evaluate(() => window.Reveal.slide(0));
+      await p3.waitForTimeout(500);
+      const items = await textItems(p3);
+      assert(items.length === 1 && items[0] === 'Key takeaway', 'text not revived: ' + JSON.stringify(items));
+      assert(await p3.evaluate(() => document.querySelectorAll('[data-aht-flat]').length === 0), 'flat wrapper not stripped after revive');
+      // and it's editable: switching to the text tool + clicking it enters an edit
+      await p3.evaluate(() => { window.AutohideToolbar.enable(true); window.AutohideToolbar.setTool('text'); });
+      await p3.locator('#aht-text-layer .aht-text-edit').click();
+      await p3.waitForTimeout(150);
+      assert(await p3.evaluate(() => !!(document.activeElement && document.activeElement.isContentEditable)), 'revived text is not editable');
+      await p3.close();
+      CURPAGE = page;
+    });
+    await test('portable copy displays WITHOUT the plugin (baked SVG + HTML are real content)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 300, 240, 'Standalone');
+      await p2.keyboard.press('Escape');
+      await p2.evaluate(() => window.AutohideToolbar.setTool('pen'));
+      await draw(p2, [[300, 360], [520, 360]]);
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(150);
+      const { file: src } = await downloadPortable(p2, `${label}-portable-src.html`);
+      await p2.close();
+      // neutralize the plugin: swap the inlined source for a no-op factory so
+      // reveal still lays out the deck but nothing revives/strips the baked DOM
+      let html = fs.readFileSync(src, 'utf8');
+      const stub = '<script>window.RevealAutohideToolbar=function(){return{id:"autohide-toolbar",init:function(){},destroy:function(){}};};'
+        + 'window.RevealAutohideToolbar.id="autohide-toolbar";window.RevealAutohideToolbar.init=function(){};window.RevealAutohideToolbar.destroy=function(){};</script>';
+      html = html.replace(/<script>\/\* reveal\.js-autohide-toolbar \(inlined[\s\S]*?<\/script>/, stub);
+      assert(html.includes(stub), 'could not neutralize the inlined plugin for the plugin-less test');
+      const file = path.join(ART, `${label}-pluginless.html`);
+      fs.writeFileSync(file, html);
+      const p3 = await ctx.newPage();
+      CURPAGE = p3;
+      await p3.goto('file://' + file, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p3);
+      await p3.evaluate(() => window.Reveal.slide(0));
+      await p3.waitForTimeout(500);
+      const t = await p3.evaluate(() => {
+        const noPlugin = !document.getElementById('aht-canvas');
+        const flat = document.querySelector('.reveal .slides section [data-aht-flat]');
+        const txt = document.querySelector('.aht-text[data-aht-text]');
+        const svg = document.querySelector('svg[data-aht-ink]');
+        const tb = txt && txt.getBoundingClientRect();
+        return {
+          noPlugin, hasFlat: !!flat, txt: txt && txt.textContent, hasSvg: !!svg,
+          visible: !!(tb && tb.width > 0 && tb.height > 0),
+        };
+      });
+      assert(t.noPlugin, 'plugin stub failed — real plugin still ran');
+      assert(t.hasFlat && t.hasSvg, 'baked annotation content missing without the plugin: ' + JSON.stringify(t));
+      assert(t.txt === 'Standalone' && t.visible, 'baked text not rendered without the plugin: ' + JSON.stringify(t));
+      await shot(p3, 'g13-pluginless');
+      await p3.close();
+      CURPAGE = page;
+    });
+    await test('flatten → revive → re-flatten keeps text identical and ink equivalent', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 280, 240, 'Round trip');
+      await p2.keyboard.press('Escape');
+      await p2.evaluate(() => window.AutohideToolbar.setTool('pen'));
+      await draw(p2, [[300, 360], [420, 300], [520, 360]]);
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(150);
+      const { file } = await downloadPortable(p2, `${label}-roundtrip.html`);
+      await p2.close();
+      const p3 = await ctx.newPage();
+      CURPAGE = p3;
+      await p3.goto('file://' + file, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p3);
+      await p3.evaluate(() => window.Reveal.slide(0));
+      await p3.waitForTimeout(500);
+      const texts = await textItems(p3);
+      assert(JSON.stringify(texts) === JSON.stringify(['Round trip']), 'text changed across round trip: ' + JSON.stringify(texts));
+      await p3.close();
+      CURPAGE = page;
+    });
+    await test('export menu still offers 4 choices; text tool present in the bar', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.keyboard.press('a');
+      await p2.waitForTimeout(150);
+      const hasText = await p2.evaluate(() => !!document.querySelector('#aht-bar [data-tool="text"]')
+        && document.querySelectorAll('#aht-bar .aht-size').length >= 2);
+      assert(hasText, 'text tool / size cluster missing from the bar');
+      await p2.keyboard.press('Escape');
+      await openExportMenu(p2);
+      const items = await p2.evaluate(() => Array.from(document.querySelectorAll('#aht-export-menu .aht-export-item'), (b) => b.textContent.replace(/\s+/g, ' ').trim()));
+      assert(items.length === 4, 'menu should have 4 items: ' + JSON.stringify(items));
+      assert(items.some((s) => /portable/i.test(s)), 'no "Save portable copy" item: ' + JSON.stringify(items));
+      await p2.close();
+      CURPAGE = page;
+    });
+
+    log(`=== ${label} · G14 regression guards (confirmed code-review fixes) ===`);
+    await test('undo while editing text reverts one step and redo restores it (no stale-stack wipe)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      // create and commit "A"
+      await typeAt(p2, 300, 240, 'A');
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(120);
+      assert(JSON.stringify(await textItems(p2)) === JSON.stringify(['A']), 'setup: "A" not committed');
+      // re-open the SAME box and extend it to "A!" — leave it dirty & UNcommitted
+      await p2.evaluate(() => window.AutohideToolbar.setTool('text'));
+      await p2.locator('#aht-text-layer .aht-text-edit').click();
+      await p2.waitForTimeout(120);
+      await p2.keyboard.type('!');
+      await p2.waitForTimeout(120);
+      // undo mid-edit must commit the pending edit FIRST, then revert exactly one
+      // step → "A". Regression: taking the stack reference before commitEditing()
+      // reset state.redo left the pending "!" popped from an orphaned array, so
+      // the text was wiped to empty and the edit became unrecoverable.
+      await p2.evaluate(() => window.AutohideToolbar.undo());
+      await p2.waitForTimeout(120);
+      assert(JSON.stringify(await textItems(p2)) === JSON.stringify(['A']),
+        'undo mid-edit did not revert to "A": ' + JSON.stringify(await textItems(p2)));
+      // and the edit is recoverable — the redo stack was not orphaned
+      await p2.evaluate(() => window.AutohideToolbar.redo());
+      await p2.waitForTimeout(120);
+      assert(JSON.stringify(await textItems(p2)) === JSON.stringify(['A!']),
+        'redo did not restore "A!": ' + JSON.stringify(await textItems(p2)));
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('data-markdown slide: annotations survive export (live↔source key mapping)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(`${BASE}/test/decks/demo.html`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'domcontentloaded' });
+      await waitReady(p2);
+      // the rendered markdown slide: SOURCE holds raw "## …" in a <script>
+      // template, the LIVE deck holds rendered HTML → their content hashes
+      // differ. Content hashing alone can't bridge them; the index-alignment
+      // key map does. Regression: the whole annotation was silently dropped.
+      const h = await p2.evaluate(() => Array.prototype.findIndex.call(
+        document.querySelectorAll('.reveal .slides > section'), (s) => /Markdown Support/.test(s.textContent)));
+      assert(h >= 0, 'no rendered data-markdown slide found in the demo deck');
+      await p2.evaluate((i) => window.Reveal.slide(i), h);
+      await p2.waitForTimeout(400);
+      await typeAt(p2, 260, 220, 'MarkdownAnno');
+      // commit the edit AND leave annotation mode: the floating bar would
+      // otherwise sit over the (chrome) export button and swallow the click
+      await p2.evaluate(() => window.AutohideToolbar.enable(false));
+      await p2.waitForTimeout(150);
+      const { file } = await downloadPortable(p2, `${label}-md-portable.html`);
+      const html = fs.readFileSync(file, 'utf8');
+      const m = html.match(/<div\b[^>]*(?:class="aht-text"|data-aht-text)[^>]*>MarkdownAnno<\/div>/i);
+      assert(m, 'markdown-slide annotation was dropped from the portable copy: '
+        + (html.match(/aht-text[\s\S]{0,80}/) || ['(no aht-text baked at all)'])[0]);
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('color swatch mid-edit keeps the caret (Chromium focus-steal fix)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 300, 240, 'Color');   // leaves the box focused & editing
+      // clicking a bar control must NOT blur the caret: the bar suppresses the
+      // mousedown focus-steal, and colour/size act ON the open edit instead of
+      // committing it. Regression (Chromium): the click stole focus, the edit
+      // committed, and further typing opened a NEW box.
+      await p2.locator('#aht-bar .aht-swatch[data-color="#1D4ED8"]').click();
+      await p2.waitForTimeout(120);
+      const t = await p2.evaluate(() => {
+        const e = document.querySelector('#aht-text-layer .aht-text-edit');
+        return {
+          editing: !!(document.activeElement && document.activeElement.isContentEditable),
+          color: e ? e.style.color : null,
+          items: document.querySelectorAll('#aht-text-layer .aht-text-item').length,
+        };
+      });
+      assert(t.editing, 'caret lost after clicking a swatch mid-edit (focus stolen)');
+      assert(t.color === 'rgb(29, 78, 216)', 'swatch did not recolour the live edit box: ' + t.color);
+      assert(t.items === 1, 'a stray text box appeared after the swatch click: ' + t.items);
+      // caret retained → more typing extends the SAME box
+      await p2.keyboard.type('ed');
+      await p2.keyboard.press('Escape');
+      await p2.waitForTimeout(120);
+      const items = await textItems(p2);
+      assert(JSON.stringify(items) === JSON.stringify(['Colored']),
+        'typing after the swatch click did not extend the same box: ' + JSON.stringify(items));
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('baked text carries the live box font + left-align (theme-proof metrics)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 280, 240, 'Baked font');
+      // commit + leave annotation so the floating bar isn't over the export button
+      await p2.evaluate(() => window.AutohideToolbar.enable(false));
+      await p2.waitForTimeout(150);
+      const { file } = await downloadPortable(p2, `${label}-bakedfont.html`);
+      const html = fs.readFileSync(file, 'utf8');
+      const m = html.match(/<div\b[^>]*(?:class="aht-text"|data-aht-text)[^>]*>Baked font<\/div>/i);
+      assert(m, 'baked text element not found in the portable copy');
+      // regression: font-family:inherit + centred text made baked/printed text
+      // reflow and mis-metric vs the live box (reveal themes centre and restyle);
+      // the baked node must pin the plugin font and left-align like .aht-text-edit
+      assert(/text-align:\s*left/i.test(m[0]), 'baked text is not left-aligned: ' + m[0]);
+      assert(/font-family:\s*var\(--aht-font/i.test(m[0]), 'baked text does not pin the plugin font: ' + m[0]);
+      await p2.close();
+      CURPAGE = page;
+    });
+
+    await test('width/size panel floats above the active tool (pen→widths, text→sizes)', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => { localStorage.clear(); window.AutohideToolbar.enable(true); window.AutohideToolbar.setTool('pen'); });
+      await p2.waitForTimeout(200);
+      const centre = (b) => b.x + b.width / 2;
+      // pen active → the stroke-width panel shows above the pen, sizes hidden
+      let t = await p2.evaluate(() => {
+        const bar = document.getElementById('aht-bar');
+        return {
+          penClass: bar.classList.contains('tool-pen'),
+          rowShown: getComputedStyle(bar.querySelector('.aht-toolrow')).display !== 'none',
+          widthsShown: getComputedStyle(bar.querySelector('.aht-widths')).display !== 'none',
+          sizesShown: getComputedStyle(bar.querySelector('.aht-sizes')).display !== 'none',
+        };
+      });
+      assert(t.penClass && t.rowShown && t.widthsShown && !t.sizesShown, 'pen: widths panel not shown correctly: ' + JSON.stringify(t));
+      let row = await p2.locator('#aht-bar .aht-toolrow').boundingBox();
+      const pen = await p2.locator('#aht-bar [data-tool="pen"]').boundingBox();
+      const barBox = await p2.locator('#aht-bar').boundingBox();
+      assert(Math.abs(centre(row) - centre(pen)) < 10, `widths panel not centred over the pen: ${centre(row)} vs ${centre(pen)}`);
+      assert(row.y + row.height <= barBox.y + 2, 'widths panel is not above the bar');
+      // switch to text → the S/M/L panel shows above the text button, widths hidden
+      await p2.evaluate(() => window.AutohideToolbar.setTool('text'));
+      await p2.waitForTimeout(150);
+      t = await p2.evaluate(() => {
+        const bar = document.getElementById('aht-bar');
+        return {
+          textClass: bar.classList.contains('tool-text'),
+          widthsShown: getComputedStyle(bar.querySelector('.aht-widths')).display !== 'none',
+          sizesShown: getComputedStyle(bar.querySelector('.aht-sizes')).display !== 'none',
+        };
+      });
+      assert(t.textClass && t.sizesShown && !t.widthsShown, 'text: sizes panel not shown correctly: ' + JSON.stringify(t));
+      row = await p2.locator('#aht-bar .aht-toolrow').boundingBox();
+      const txt = await p2.locator('#aht-bar [data-tool="text"]').boundingBox();
+      assert(Math.abs(centre(row) - centre(txt)) < 10, `sizes panel not centred over the text tool: ${centre(row)} vs ${centre(txt)}`);
+      // eraser → no contextual panel at all
+      await p2.evaluate(() => window.AutohideToolbar.setTool('eraser'));
+      await p2.waitForTimeout(150);
+      const rowHidden = await p2.evaluate(() => getComputedStyle(document.getElementById('aht-bar').querySelector('.aht-toolrow')).display === 'none');
+      assert(rowHidden, 'eraser should hide the contextual panel');
+      // highlighter → no panel either (one fixed band width), but its button is active
+      await p2.evaluate(() => window.AutohideToolbar.setTool('highlighter'));
+      await p2.waitForTimeout(150);
+      const hl = await p2.evaluate(() => ({
+        rowHidden: getComputedStyle(document.getElementById('aht-bar').querySelector('.aht-toolrow')).display === 'none',
+        active: document.querySelector('#aht-bar [data-tool="highlighter"]').classList.contains('active'),
+      }));
+      assert(hl.rowHidden, 'highlighter should hide the contextual panel');
+      assert(hl.active, 'highlighter button not marked active');
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('highlighter: H toggles it, lays translucent ink, sits under the pen', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => window.AutohideToolbar.enable(true));
+      await p2.waitForTimeout(150);
+      // H enters the highlighter and toggles back to the pen
+      await p2.keyboard.press('h');
+      await p2.waitForTimeout(120);
+      assert(await p2.evaluate(() => document.querySelector('#aht-bar [data-tool="highlighter"]').classList.contains('active')), 'H did not select the highlighter');
+      await p2.keyboard.press('h');
+      await p2.waitForTimeout(120);
+      assert(await p2.evaluate(() => document.querySelector('#aht-bar [data-tool="pen"]').classList.contains('active')), 'H did not toggle back to the pen');
+      // draw an amber highlighter band; picking a swatch must KEEP the highlighter
+      // (not fall back to the pen), and the band's centre is present but translucent
+      await p2.evaluate(() => window.AutohideToolbar.setTool('highlighter'));
+      await p2.locator('#aht-bar .aht-swatch[data-color="#FCD34D"]').click();
+      assert(await p2.evaluate(() => document.querySelector('#aht-bar [data-tool="highlighter"]').classList.contains('active')), 'picking a colour dropped the highlighter');
+      await draw(p2, [[250, 300], [550, 300]]);
+      const band = await pixel(p2, 400, 300);
+      assert(band[3] > 40 && band[3] < 170, 'highlighter band is not translucent (alpha ' + band[3] + ')');
+      assert(band[0] > 150 && band[1] > 120 && band[2] < 160, 'highlighter band is not the amber hue: ' + band);
+      // a blue pen stroke crossing the band lands ON TOP: the crossing goes opaque blue
+      await p2.evaluate(() => window.AutohideToolbar.setTool('pen'));
+      await p2.locator('#aht-bar .aht-swatch[data-color="#1D4ED8"]').click();
+      await draw(p2, [[400, 250], [400, 350]]);
+      const cross = await pixel(p2, 400, 300);
+      assert(cross[3] > 220, 'pen did not paint opaque over the highlighter (alpha ' + cross[3] + ')');
+      assert(cross[2] > 120 && cross[0] < 90, 'pen is not on top of the highlighter at the crossing: ' + cross);
+      await p2.close();
+      CURPAGE = page;
+    });
+    await test('text box delete control is a trash bin, spaced apart from the drag grip', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await typeAt(p2, 320, 260, 'Trash me');
+      await p2.waitForTimeout(120);
+      const t = await p2.evaluate(() => {
+        const item = document.querySelector('#aht-text-layer .aht-text-item.editing');
+        const grip = item.querySelector('.aht-text-grip');
+        const del = item.querySelector('.aht-text-del');
+        const gr = grip.getBoundingClientRect(), dr = del.getBoundingClientRect();
+        return {
+          // trash-2 has 5 sub-paths; the old × had 2 — a cheap icon-identity check
+          delPaths: del.querySelectorAll('svg path').length,
+          gap: dr.left - gr.right,
+        };
+      });
+      assert(t.delPaths >= 4, 'delete control is not the trash-bin icon (path count ' + t.delPaths + ')');
+      assert(t.gap >= 10, 'drag grip and trash are too close (' + Math.round(t.gap) + 'px) — easy to mis-tap');
+      await p2.close();
+      CURPAGE = page;
+    });
+
+    await test('S/M/L presets carry style: L is bold, S is condensed — baked + revived', async () => {
+      const p2 = await ctx.newPage();
+      CURPAGE = p2;
+      await p2.goto(DEMO, { waitUntil: 'networkidle' });
+      await waitReady(p2);
+      await p2.evaluate(() => localStorage.clear());
+      await p2.reload({ waitUntil: 'networkidle' });
+      await waitReady(p2);
+      const box = await canvasBox(p2);
+      await p2.evaluate(() => { window.AutohideToolbar.enable(true); window.AutohideToolbar.setTool('text'); });
+      await p2.waitForTimeout(100);
+      // L preset → a bold box
+      await p2.locator('#aht-bar .aht-size.l').click();
+      await p2.mouse.click(box.x + 260, box.y + 170);
+      await p2.keyboard.type('Head');
+      await p2.waitForTimeout(80);
+      let live = await p2.evaluate(() => document.querySelector('#aht-text-layer .aht-text-item.editing .aht-text-edit').style.fontWeight);
+      assert(live === '700', 'L preset did not make the live box bold: ' + live);
+      await p2.keyboard.press('Escape');   // commit "Head" before picking the next preset
+      await p2.waitForTimeout(80);
+      // S preset → a condensed, regular-weight box
+      await p2.locator('#aht-bar .aht-size.s').click();
+      await p2.mouse.click(box.x + 260, box.y + 320);
+      await p2.keyboard.type('note');
+      await p2.waitForTimeout(80);
+      live = await p2.evaluate(() => {
+        const e = document.querySelector('#aht-text-layer .aht-text-item.editing .aht-text-edit');
+        return { stretch: e.style.fontStretch, weight: e.style.fontWeight };
+      });
+      assert(/75%|condensed/.test(live.stretch) && live.weight === '400', 'S preset not condensed/regular: ' + JSON.stringify(live));
+      await p2.evaluate(() => window.AutohideToolbar.enable(false));   // commit + leave annotation
+      await p2.waitForTimeout(150);
+      // bake: the styles land in the portable HTML as real CSS + data-* markers
+      const { file } = await downloadPortable(p2, `${label}-styled.html`);
+      const html = fs.readFileSync(file, 'utf8');
+      const lNode = html.match(/<div\b[^>]*>Head<\/div>/i);
+      const sNode = html.match(/<div\b[^>]*>note<\/div>/i);
+      assert(lNode && /font-weight:\s*700/.test(lNode[0]) && /data-aht-bold/.test(lNode[0]), 'L not baked bold: ' + (lNode && lNode[0]));
+      assert(sNode && /font-stretch:\s*75%/.test(sNode[0]) && /data-aht-cond/.test(sNode[0]), 'S not baked condensed: ' + (sNode && sNode[0]));
+      await p2.close();
+      // revive: styles restored onto the editable boxes
+      const p3 = await ctx.newPage();
+      CURPAGE = p3;
+      await p3.goto('file://' + file, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await waitReady(p3);
+      await p3.evaluate(() => window.Reveal.slide(0));
+      await p3.waitForTimeout(500);
+      const revived = await p3.evaluate(() => {
+        const edits = Array.from(document.querySelectorAll('#aht-text-layer .aht-text-edit'));
+        const by = (t) => edits.find((e) => e.textContent === t);
+        const h = by('Head'), n = by('note');
+        return { headBold: !!h && h.style.fontWeight === '700', noteCond: !!n && /75%|condensed/.test(n.style.fontStretch) };
+      });
+      assert(revived.headBold, 'revived L text lost its bold');
+      assert(revived.noteCond, 'revived S text lost its condensed');
+      await p3.close();
       CURPAGE = page;
     });
 

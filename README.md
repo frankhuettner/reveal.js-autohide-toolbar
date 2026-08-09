@@ -1,19 +1,27 @@
 # reveal.js-autohide-toolbar
 
 **▶ [Try the live demo](https://huettner.io/reveal.js-autohide-toolbar/demo/)** —
-draw on the slides, insert a board slide, save an annotated copy, switch the
-deck format, all in your browser.
+draw on the slides, type a text note, insert a board slide, save a portable
+copy, switch the deck format, all in your browser.
 
 A presenter toolkit for [reveal.js](https://revealjs.com), in one dependency-free
-file: **ink annotation** over your slides plus a **Slidev-style auto-hiding
-toolbar** with everything you need at the podium.
+file: **ink & text annotation** over your slides plus a **Slidev-style
+auto-hiding toolbar** with everything you need at the podium.
 
-- ✏️ **Annotate slides** — pen, true per-stroke eraser, undo, colour palette
-  (three neutrals plus five hues, each as an **ink**/**chalk** pair from the
-  Tailwind ramps: the dark 700 shade reads on white slides and survives
-  washed-out projectors, the light 300 shade reads on dark boards even when
-  a projector lifts their black to gray), three pen widths.
+- ✏️ **Annotate slides** — pen, translucent highlighter, true per-stroke eraser,
+  undo, colour palette (three neutrals plus five hues, each as an **ink**/**chalk**
+  pair from the Tailwind ramps: the dark 700 shade reads on white slides and
+  survives washed-out projectors, the light 300 shade reads on dark boards even
+  when a projector lifts their black to gray), three pen widths. The highlighter
+  is a broad translucent marker that lays down under your pen ink.
   Ink lands exactly under the cursor at any window size, zoom, or letterboxing.
+- 🔤 **Typed text** — a **Text** tool beside the pen for those who'd rather type
+  than sketch: click to type, click a box to re-edit, drag its grip to move,
+  **🗑 trash bin** to delete (set well apart from the grip so a mis-aimed drag
+  never deletes). Text shares the palette colour; the S/M/L presets map to a
+  slide type scale — **S** small-condensed, **M** subheadline, **L** headline-bold — and scale
+  with the slide. It's kept as **real, editable text** — never flattened to an
+  image — so a saved copy stays editable anywhere (see *portable copy* below).
 - 🖼️ **Board slides** — insert a blank whiteboard (or flip it to a dark
   blackboard) as a *real slide* after the current one. The board keeps the
   **deck's slide format**: surface and writable area are the slide box, just
@@ -150,16 +158,37 @@ The demo deck uses exactly this setup: 16:9 + `margin: 0` + `maxScale: 4`
 | -------------- | -------------------------------------------------- |
 | `A`            | Annotate on/off (draw over the current slide)      |
 | `E`            | Eraser (removes only the strokes you touch)        |
-| `Ctrl`+`Z`     | Undo last stroke                                   |
+| `H`            | Highlighter (translucent marker; toggles back to the pen) |
+| `T`            | Text tool (type a note; toggles back to the pen)   |
+| `Ctrl`+`Z`     | Undo last stroke / text change                     |
 | `Ctrl`+`Shift`+`Z` | Redo                                           |
-| `X`            | Clear all ink on this slide                        |
-| `Shift`+`X`    | Clear ink on **all** slides (asks first)           |
-| `Esc`          | Exit annotation                                    |
+| `X`            | Clear all ink **and text** on this slide           |
+| `Shift`+`X`    | Clear **all** slides (asks first)                  |
+| `Esc`          | Commit an open text box, else exit annotation      |
 
 The annotation toolbar (bottom-centre while drawing) has the same actions as
-buttons, plus colour swatches, pen widths, undo/redo, a broom that sweeps the
-current slide clean, the board buttons, and a broom-with-sparkle that clears
-the whole deck (with confirmation).
+buttons — pen, highlighter, eraser, Text — plus colour swatches, undo/redo, a
+broom that sweeps the current slide clean, the board buttons, and a
+broom-with-sparkle that clears the whole deck (with confirmation). The
+tool-specific controls appear in a small panel **just above the active tool**:
+the three **pen widths** hover over the pen, the three **text sizes (S/M/L)**
+over the Text tool. The highlighter and eraser have no panel — the highlighter
+draws one broad, fixed width, and shares the pen's colour palette (laid down
+translucent).
+
+### Typing text
+
+Pick the **Text** tool (the `T` button, or press `T`), then:
+
+- **click empty space** to drop a box and start typing immediately;
+- **click a box** to re-edit it; **drag its grip** (top-left) to move it; the
+  **trash bin** (spaced apart from the grip) deletes it;
+- `Esc` or a click away **commits** it — an empty box is discarded.
+
+Text picks up the current palette colour and the chosen size, and scales with
+the slide. It is kept as **real editable text**, never rasterised — so it stays
+editable in a saved *portable copy*, in the PDF (as selectable text), and even
+in other HTML editors.
 
 On **touch devices** the navigation toolbar is always visible; tap ✏️ to draw.
 Taps on links, buttons, form fields, video/iframe — or anything matching the
@@ -190,37 +219,45 @@ their drawings.
 
 ## Saving, sharing & PDF export
 
-Ink lives in localStorage by default — per browser, per deck. Everything that
-takes it further sits in one place: the toolbar's **download/print menu**
+Annotations live in localStorage by default — per browser, per deck. Everything
+that takes them further sits in one place: the toolbar's **download/print menu**
 (the printer/download button), with four choices:
 
 - **Save a copy** — a single, self-contained HTML file of your deck *without*
-  ink (any embedded annotations are stripped) — the clean, shareable deck.
-- **💾 Save annotated copy** — the same single file, with the ink (and boards)
-  embedded **and the plugin source inlined**, so the file opens anywhere —
+  annotations (any baked annotations and board slides are stripped) — the clean,
+  shareable deck.
+- **💾 Save portable copy** — the same single file, with your annotations
+  **baked into the slides as regular content**: ink becomes static inline
+  `<svg>` paths, text becomes real editable HTML, and board slides become real
+  pages. The plugin source is inlined too, so the file opens anywhere —
   double-clicked from a Downloads folder included. (Keep reveal itself on
   absolute/CDN URLs; relative reveal assets can't travel with a single file.)
   Saving needs the deck served over http(s) — on `file://` this choice falls
-  back to a JSON export of the ink.
-  Technically the ink is stored in a
-  `<script type="application/json" data-aht-annotations>` block; you can also
-  add such a block to a deck by hand to ship baseline annotations with it.
-  Local edits always win over the embedded baseline, and a confirmed
-  *clear all* keeps it suppressed.
+  back to a JSON export.
+
+  Because the annotations are ordinary SVG and HTML, a portable copy
+  **displays anywhere reveal runs — even without this plugin**, and even after
+  pasting the slides into another editor. And wherever the plugin *does* load,
+  the baked annotations **auto-revive** back into the fully editable model — no
+  separate import step: opening the file *is* the import. (Legacy decks that
+  ship a `<script type="application/json" data-aht-annotations>` block are still
+  read; local edits win over any baked/embedded baseline, and a confirmed
+  *clear all* keeps it suppressed.)
 - **PDF / print with ink** — opens reveal's
   [print view](https://revealjs.com/pdf-export/) in a new tab (your running
   talk is untouched) and pops the browser's print dialog by itself: choose
   *Save as PDF* — and enable *background graphics*, or board slides and
-  background colours come out white. Every annotation is rendered as a crisp
-  **SVG vector overlay** on its slide, and board slides print as real
-  dark/white pages. Chromium-based browsers paginate reveal's print view most
-  reliably (reveal's own recommendation).
-- **PDF / print clean** — the same, without ink or boards.
+  background colours come out white. Ink is rendered as a crisp **SVG vector
+  overlay** and text as selectable HTML on each slide, and board slides print
+  as real dark/white pages. Chromium-based browsers paginate reveal's print
+  view most reliably (reveal's own recommendation).
+- **PDF / print clean** — the same, without annotations or boards.
 
 Under the hood the PDF choices are just URLs — `?print-pdf&aht-print=1`
 (+`&aht-ink=0` for clean), so they script and bookmark well. `?aht-ink=0`
-works for presenting, too: it hides all stored and embedded ink for that
-session without deleting anything.
+works for presenting, too: it hides all stored, embedded **and baked**
+annotations for that session (baked ones are stripped from the DOM) without
+deleting anything.
 
 ## Options
 
@@ -232,8 +269,16 @@ Reveal.initialize({
   autohideToolbar: {
     colors: ['#FFFFFF','#8E8E93','#000000','#B91C1C', /* … */], // swatch palette
     defaultColor: '#B91C1C',
-    widths: { thin: 3, med: 6, thick: 11 },  // name → px
-    defaultWidth: 6,
+    widths: { thin: 2, med: 4, thick: 8 },   // name → px
+    defaultWidth: 4,
+    highlighterWidth: 20,                    // broad marker band, px
+    highlighterAlpha: 0.4,                   // marker opacity, 0–1
+    textSizes: {                             // presets: fraction of slide height + style
+      S: { size: 0.0296, cond: true },       //  16px @540 — condensed
+      M: { size: 0.0370 },                   //  20px
+      L: { size: 0.0519, bold: true },       //  28px — bold
+    },
+    defaultTextSize: 0.0370,                 // = M (scales with the slide)
     eraserRadius: 16,                        // px hit radius
     persist: true,                           // save ink to localStorage
     storageKey: 'aht:' + location.pathname,
@@ -255,7 +300,7 @@ Reveal.initialize({
 ```
 
 A small runtime API is exposed on `window.AutohideToolbar`: `toggle()`, `enable(bool)`,
-`setTool('pen'|'eraser')`, `setColor(hex)`, `undo()`, `clearSlide()`, `clearAll()`,
+`setTool('pen'|'highlighter'|'eraser'|'text')`, `setColor(hex)`, `undo()`, `clearSlide()`, `clearAll()`,
 `redo()`, `addBoard()`, `removeBoard()`, `toggleSurface()`, `saveCopy(withInk)`,
 `printPdf(withInk)` — the latter two default to *with ink*; pass `false` for the
 clean variant. (The API acts directly — the confirmation dialogs live in the UI
@@ -279,6 +324,9 @@ CSS custom properties, set on `:root` in your deck (values shown are the default
 :root {
   --aht-accent: #E31937;               /* active-tool highlight */
   --aht-font: 'Open Sans', system-ui, sans-serif;
+  --aht-font-condensed: var(--aht-font); /* font for the S (condensed) preset —
+                                            point at a width-variable or condensed
+                                            family for true condensed text */
   --aht-panel-bg: rgba(10,18,34,.82);  /* navigation toolbar */
   --aht-bar-bg: rgba(6,18,42,.92);     /* annotation toolbar */
   --aht-board-bg: #000000;             /* blackboard colour */
@@ -293,8 +341,12 @@ runs as a **matrix: {Chromium, WebKit} × {reveal 5.2.1, reveal 6.0.1}** —
 about 50 tests per cell, ~200 total. The test server rewrites the pinned
 reveal CDN version in every served page (including reveal 6's moved plugin
 paths), so one set of fixtures covers every reveal version. Covered:
-pixel-probed ink, eraser/undo, persistence and migration, stable-key behaviour
-under deck edits, board slides, two-window speaker sync, print/scroll views,
+pixel-probed ink, eraser/undo, the **translucent highlighter** (drawn under the
+pen, round-tripped through a portable copy), persistence and migration,
+stable-key behaviour under deck edits, board slides, **typed text
+(create/edit/move/delete, undo, literal typing)**, **flatten→revive
+round-trips** (baked SVG + editable HTML,
+plugin-less display), two-window speaker sync, print/scroll views,
 touch emulation, options fixtures, and `destroy()`. It also smoke-tests
 **real-world decks** vendored from `hakimel/reveal.js@5.2.1` (MIT) in
 `test/decks/` — the official demo (vertical stacks, fragments, markdown,
@@ -420,14 +472,24 @@ Reveal.initialize({ scrollActivationWidth: 0, /* … */ });
 - **Older browsers may show keyword cursors** (`crosshair`/`cell`) instead of
   the pen/eraser shapes — the SVG cursors render fine in current Chrome,
   Firefox, and Safari (Safari verified manually on macOS).
-- **Live ink is per-browser** (localStorage) and private windows forget it —
-  use *save annotated copy* to move or archive annotations.
+- **Live annotations are per-browser** (localStorage) and private windows forget
+  them — use *save portable copy* to move, archive, or hand off annotations.
 - **Rewriting a slide's content detaches its ink** (content-based keys). The
   ink stays in storage and returns if the edit is reverted; explicit section
   `id`s make keys immune to content edits.
 - **`Cmd/Ctrl+P` on the live view** prints without ink — use the toolbar's
   download/print menu (or `?print-pdf` by hand, reveal's own export path) for
   the annotated PDF.
+- **Portable copies viewed *without* the plugin sit high on short slides**
+  (`center: true`): reveal centres a slide by its `scrollHeight`, which the
+  baked full-height overlay inflates. Content and annotations shift together,
+  so they stay aligned; opening the copy normally — with the plugin — is
+  unaffected (baked annotations are re-absorbed before layout).
+- **Decks whose slides are generated from an external file** (e.g.
+  `data-markdown` with an external `.md`) can't be index-matched at export;
+  *save portable copy* falls back to content matching, which misses slides
+  whose rendered text differs from their source. Inline slides — including
+  inline markdown and KaTeX/MathJax — are matched by position and export fine.
 - **Don't change the deck's aspect ratio after annotating.** Strokes live in
   slide-box coordinates: resizing the window, `margin` or `maxScale` is always
   safe, but switching `width`/`height` to a different ratio (4:3 → 16:9)

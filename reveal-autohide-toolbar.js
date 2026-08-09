@@ -3,6 +3,9 @@
  * --------------------------------------------------
  * Everything you need at the podium, in one dependency-free file:
  *   • ink annotation over slides (pen, eraser, undo, palette)
+ *   • typed-text annotation (a Text tool alongside the pen): click to type,
+ *     click a box to re-edit, drag its grip to move, × to delete; shares the
+ *     palette colour, has S/M/L sizes, and scales with the slide
  *   • board slides: insert a blank whiteboard (or blackboard — toggle the
  *     surface) as a REAL slide after the current one; the board keeps the
  *     deck's slide format (surface and writable area = the slide box, like
@@ -20,13 +23,18 @@
  *     speaker view and it shows on the audience screen, and vice versa
  *     (needs persist: true; concurrent drawing in two windows: last write wins)
  *   • saving & sharing, via the toolbar's download/print menu: save a
- *     self-contained HTML copy of the deck — clean, or with the ink embedded
- *     and the plugin source inlined so the file opens anywhere; a deck can
- *     ship baseline ink in a
- *     <script type="application/json" data-aht-annotations> block
+ *     self-contained HTML copy of the deck — clean, or PORTABLE, with the
+ *     annotations baked into the slides as regular content (ink as static inline
+ *     <svg> paths, text as editable HTML) and the plugin source inlined. A
+ *     portable copy DISPLAYS anywhere reveal runs — even without this plugin —
+ *     and, wherever the plugin does load, auto-REVIVES back into the fully
+ *     editable model (no separate import step). Legacy decks that ship baseline
+ *     ink in a <script type="application/json" data-aht-annotations> block are
+ *     still read.
  *   • PDF export, from the same menu (with ink or clean): opens reveal's
  *     ?print-pdf view in a new tab and pops the browser's print dialog —
- *     ink is rendered as crisp SVG overlays, board slides print as real pages
+ *     ink is rendered as crisp SVG overlays, text as HTML, board slides as
+ *     real pages
  *
  * Usage — the plugin injects its own CSS and cursors, nothing else to include:
  *
@@ -59,14 +67,23 @@
  *   colors        string[]  swatch palette              (default: 3 neutrals + 5 hues,
  *                           each as an ink (Tailwind 700) / chalk (Tailwind 300) pair)
  *   defaultColor  string    initial pen colour          (default: '#B91C1C')
- *   widths        {name:px} pen widths                  (default: {thin:3,med:6,thick:11})
- *   defaultWidth  number    initial pen width           (default: 6)
+ *   widths        {name:px} pen widths                  (default: {thin:2,med:4,thick:8})
+ *   defaultWidth  number    initial pen width           (default: 4)
+ *   highlighterWidth number highlighter band width (px)  (default: 20)
+ *   highlighterAlpha number highlighter opacity, 0–1     (default: 0.4)
+ *   textSizes     {name:{size,bold?,cond?}} typed-text presets; size is a
+ *                           fraction of slide-box height (scales with the slide),
+ *                           bold/cond add weight/condensed. A bare number = size
+ *                           only.  (default S:16px cond, M:20px, L:28px bold @540)
+ *   defaultTextSize number  initial text size (a preset's size) (default: 0.037)
  *   eraserRadius  number    eraser hit radius (px)       (default: 16)
  *   persist       boolean   save ink to localStorage     (default: true)
  *   storageKey    string    localStorage key             (default: 'aht:'+pathname)
  *   annotations   boolean   false = present clean: ignore stored/embedded ink
- *                           and draw session-only, nothing is deleted (also
- *                           via URL param ?aht-ink=0)    (default: true)
+ *                           and draw session-only, nothing is deleted; baked
+ *                           (portable) annotations are actively stripped from
+ *                           the DOM so the slides show clean (also via URL
+ *                           param ?aht-ink=0)            (default: true)
  *   tapToAdvance  boolean   touch tap-to-navigate        (default: true)
  *   tapIgnore     string    selector for tap targets that must NOT navigate
  *   tools         string[]  toolbar items, in order      (default below); items:
@@ -94,8 +111,9 @@
  *   --aht-board-bg  blackboard colour                (default #000000)
  *   --aht-z         base z-index                     (default 30)
  *
- * Keys: A annotate · E eraser · Ctrl+Z undo · Ctrl+Shift+Z redo ·
- *       X clear slide · Shift+X clear all · Esc exit
+ * Keys: A annotate · E eraser · H highlighter · T text · Ctrl+Z undo ·
+ *       Ctrl+Shift+Z redo · X clear slide · Shift+X clear all ·
+ *       Esc exit (Esc commits an open text box)
  *
  * Assumes a single, full-viewport deck (the common case). Not yet multi-deck /
  * embedded-safe: UI is appended to <body> and listeners are document-level.
@@ -122,8 +140,24 @@
       '#7E22CE', '#D8B4FE',              // purple: ink | chalk
     ],
     defaultColor: '#B91C1C',
-    widths: { thin: 3, med: 6, thick: 11 },
-    defaultWidth: 6,
+    widths: { thin: 2, med: 4, thick: 8 },
+    defaultWidth: 4,
+    // the highlighter is a broad, translucent marker: one fixed width (px at the
+    // draw-time slide-box width, so it scales with the slide like the pen) and a
+    // low opacity so slide content and pen ink read through it
+    highlighterWidth: 20,
+    highlighterAlpha: 0.4,
+    // typed-text presets, keyed S/M/L. size is a fraction of the slide-box
+    // HEIGHT so text scales with the slide; each preset also carries its own
+    // style. On a 540-tall, 1pt→1px (PowerPoint-sized) deck these are
+    // 16 px condensed / 20 px / 28 px bold. Override cfg.textSizes for another
+    // scale; a bare number also works (size only, regular weight).
+    textSizes: {
+      S: { size: 0.0296, cond: true },   //  16 px @540 — condensed
+      M: { size: 0.0370 },               //  20 px
+      L: { size: 0.0519, bold: true },   //  28 px — bold
+    },
+    defaultTextSize: 0.0370,             // = M
     eraserRadius: 16,
     persist: true,
     storageKey: 'aht:' + location.pathname,
@@ -147,6 +181,11 @@
     'M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21',
     'm5.082 11.09 8.828 8.828',
   ];
+  // lucide "highlighter" — the marker body (first path) is filled in the cursor
+  const HL_D = [
+    'm9 11-6 6v3h9l3-3',
+    'm22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4',
+  ];
   const paths = (ds) => ds.map((d) => `<path d="${d}"/>`).join('');
   // cursor: a white halo pass under an outlined, colour-filled pass (first path filled)
   const cursorSvg = (ds, fill) =>
@@ -160,6 +199,44 @@
 #aht-canvas { position: fixed; z-index: var(--aht-z, 30); pointer-events: none; touch-action: none; background: transparent; }
 #aht-canvas.active { pointer-events: auto; cursor: ${cur(cursorSvg(PEN_D, '#FCD34D'))} 2 22, crosshair; }
 #aht-canvas.active.erasing { cursor: ${cur(cursorSvg(ERASER_D, '#F4A3A3'))} 6 20, cell; }
+#aht-canvas.active.highlighting { cursor: ${cur(cursorSvg(HL_D, '#FCD34D'))} 3 20, crosshair; }
+
+/* typed-text overlay: sits just above the ink canvas over the same slide box.
+   Inert (pointer-events:none) unless the Text tool is active, so taps still
+   navigate and pen/eraser draw straight through it. */
+#aht-text-layer { position: fixed; z-index: calc(var(--aht-z, 30) + 1); pointer-events: none; touch-action: none; overflow: visible; }
+#aht-text-layer.active { pointer-events: auto; cursor: text; }
+.aht-text-item { position: absolute; }
+.aht-text-edit {
+  position: relative; display: inline-block; white-space: pre; line-height: 1.15;
+  outline: none; min-width: 6px; min-height: 1em; cursor: text;
+  font-family: var(--aht-font, 'Open Sans', system-ui, sans-serif);
+}
+#aht-text-layer.active .aht-text-item:hover .aht-text-edit,
+.aht-text-item.editing .aht-text-edit { box-shadow: 0 0 0 1px rgba(120,160,255,.75); border-radius: 2px; }
+/* drag grip + delete, spaced well apart so a mis-aimed drag never deletes */
+.aht-text-tools { position: absolute; left: 0; top: -28px; display: none; gap: 10px; align-items: center;
+  background: var(--aht-bar-bg, rgba(6,18,42,.92)); border-radius: 8px; padding: 3px 6px; box-shadow: 0 3px 12px rgba(0,0,0,.4); }
+.aht-text-item.editing .aht-text-tools,
+#aht-text-layer.active .aht-text-item:hover .aht-text-tools { display: inline-flex; }
+.aht-text-tools .aht-text-grip { cursor: grab; touch-action: none; color: #8fa0bb; display: inline-flex; }
+.aht-text-tools .aht-text-grip:active { cursor: grabbing; }
+.aht-text-tools .aht-text-grip svg { width: 15px; height: 15px; display: block; }
+.aht-text-tools .aht-text-del {
+  border: none; background: transparent; color: #e7ecf5; cursor: pointer; margin-left: 8px;
+  width: 22px; height: 22px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center;
+}
+/* the trash bin turns red on hover — an unmistakable "this deletes" cue */
+.aht-text-tools .aht-text-del:hover { background: rgba(227,25,55,.85); color: #fff; }
+.aht-text-tools .aht-text-del svg { width: 15px; height: 15px; display: block; }
+/* text-size picker in the annotation bar */
+#aht-bar .aht-sizes { display: inline-flex; align-items: center; gap: 4px; }
+#aht-bar .aht-size { width: 34px; height: 34px; font-weight: 400; line-height: 1; }
+#aht-bar .aht-size span { display: inline-block; line-height: 1; }
+#aht-bar .aht-size.s span { font-size: 16px; font-stretch: 75%; letter-spacing: -.03em; }
+#aht-bar .aht-size.m span { font-size: 20px; }
+#aht-bar .aht-size.l span { font-size: 28px; font-weight: 700; }
+#aht-bar .aht-size.active { background: rgba(255,255,255,.2); }
 
 /* board slides keep the deck's slide format: the SECTION is the surface,
    filling the slide box exactly (reveal makes sections width:100% already) */
@@ -234,6 +311,17 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 #aht-bar .aht-w span { display: inline-block; background: #e7ecf5; border-radius: 50%; }
 #aht-bar .aht-w.active { background: rgba(255,255,255,.2); }
 #aht-bar .aht-w.active span { background: #fff; }
+/* contextual controls float in a small panel just above their tool button:
+   the stroke widths over the pen, the S/M/L sizes over the text tool. The panel
+   is absolutely positioned, so it never adds to the bar's own (single) row. */
+#aht-bar .aht-toolrow {
+  position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%);
+  display: none; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 10px;
+  background: var(--aht-bar-bg, rgba(6,18,42,.92)); box-shadow: 0 4px 18px rgba(0,0,0,.4);
+}
+#aht-bar.tool-pen .aht-toolrow, #aht-bar.tool-text .aht-toolrow { display: inline-flex; }
+#aht-bar.tool-pen .aht-sizes { display: none; }
+#aht-bar.tool-text .aht-widths { display: none; }
 
 #aht-confirm-wrap {
   position: fixed; inset: 0; z-index: calc(var(--aht-z, 30) + 40);
@@ -285,17 +373,25 @@ body.aht-noselect, body.aht-noselect * {
   -webkit-user-select: none !important; user-select: none !important;
   -webkit-touch-callout: none !important;
 }
+/* …but the text box being edited must allow caret + selection */
+body.aht-noselect .aht-text-edit, body.aht-noselect .aht-text-edit * {
+  -webkit-user-select: text !important; user-select: text !important;
+  -webkit-touch-callout: default !important;
+}
 
-@media print { #aht-canvas, #aht-toolbar, #aht-bar, #aht-export-wrap { display: none !important; } }
+@media print { #aht-canvas, #aht-text-layer, #aht-toolbar, #aht-bar, #aht-export-wrap { display: none !important; } }
 `;
 
   // ---------- state ----------
   let cfg;
   const state = {
     Reveal: null, on: false, overview: false, tool: 'pen', color: null, width: 0,
-    strokes: {}, boards: [], undo: {}, redo: {}, drawing: false, cur: null, pid: null,
+    size: 0, bold: false, cond: false,   // current text preset (size fraction + style)
+    strokes: {}, texts: {}, boards: [], undo: {}, redo: {}, drawing: false, cur: null, pid: null,
+    editingText: null,   // the text box element currently being edited, if any
   };
-  let canvas, ctx, bar, launch, slideNoEl, toolsEl, slidesEl;
+  const NS = 'http://www.w3.org/2000/svg';
+  let canvas, ctx, textLayer, bar, launch, slideNoEl, toolsEl, slidesEl;
   let rect = null;            // slide box in CSS px — updated in place() / on pen-down
   let zone = null;            // toolbar hover-wake zone, derived from the toolbar's rect
   let chromeTimer = null, layoutTimer = null, noHover = false, tap = null;
@@ -317,28 +413,55 @@ body.aht-noselect, body.aht-noselect * {
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
     return h.toString(36);
   }
-  function leafSections() {
+  function leafSectionsIn(root) {
     return Array.prototype.filter.call(
-      slidesEl.querySelectorAll('section'),
+      root.querySelectorAll('section'),
       (s) => !s.querySelector('section'));
   }
-  function computeKeys() {
-    keyCache = new WeakMap();
+  const leafSections = () => leafSectionsIn(slidesEl);
+  // The content fingerprint must be IDENTICAL whether or not the slide carries a
+  // baked-annotation wrapper — otherwise flattening a deck would shift its own
+  // keys. So exclude [data-aht-flat] subtrees from the basis.
+  function contentBasis(s) {
+    let node = s;
+    if (s.querySelector('[data-aht-flat]')) {
+      node = s.cloneNode(true);
+      node.querySelectorAll('[data-aht-flat]').forEach((n) => n.remove());
+    }
+    return (node.textContent || '').replace(/\s+/g, ' ').trim()
+      || (node.innerHTML || '').replace(/\s+/g, ' ').trim();
+  }
+  // Map every leaf section of `root` to its stable key (same rules as the live
+  // deck), returned as a plain Map so flatten can key a parsed source document.
+  function keysFor(root) {
+    const map = new Map();
     const counts = {};
-    leafSections().forEach((s) => {
-      if (s.hasAttribute('data-aht-board')) { keyCache.set(s, 'b:' + s.getAttribute('data-aht-board')); return; }
+    leafSectionsIn(root).forEach((s) => {
       let k;
-      if (s.id) k = 'id:' + s.id;
+      if (s.hasAttribute('data-aht-board')) k = 'b:' + s.getAttribute('data-aht-board');
+      else if (s.id) k = 'id:' + s.id;
       else if (s.getAttribute('data-aht-id')) k = 's:' + s.getAttribute('data-aht-id');
       else {
-        const basis = (s.textContent || '').replace(/\s+/g, ' ').trim()
-          || (s.innerHTML || '').replace(/\s+/g, ' ').trim();
-        const h = fnv1a(basis);
+        const h = fnv1a(contentBasis(s));
         const n = counts[h] || 0; counts[h] = n + 1;
         k = 'c:' + h + ':' + n;
       }
-      keyCache.set(s, k);
+      map.set(s, k);
     });
+    return map;
+  }
+  function computeKeys() {
+    keyCache = new WeakMap();
+    keysFor(slidesEl).forEach((k, s) => keyCache.set(s, k));
+  }
+  // Key of ONE section by the same priority rules, twin counter pinned to 0 —
+  // for sections the cache can't know (reveal's print-page clones, a revive
+  // fallback). Identical twins collapse onto the first twin's key (accepted).
+  function sectionKey(sec) {
+    if (sec.hasAttribute('data-aht-board')) return 'b:' + sec.getAttribute('data-aht-board');
+    if (sec.id) return 'id:' + sec.id;
+    if (sec.getAttribute('data-aht-id')) return 's:' + sec.getAttribute('data-aht-id');
+    return 'c:' + fnv1a(contentBasis(sec)) + ':0';
   }
   function curKey() {
     const s = state.Reveal.getCurrentSlide && state.Reveal.getCurrentSlide();
@@ -367,14 +490,10 @@ body.aht-noselect, body.aht-noselect * {
   // Aspect-fit box for a stroke: if the deck's format changed since the stroke
   // was drawn (st.a ≠ current aspect), fit the original-aspect box centred into
   // the current slide box so ink keeps its shape instead of stretching.
-  function strokeBox(st) {
-    const a0 = st.a, curA = rect.width / rect.height;
-    if (!a0 || Math.abs(curA - a0) < 0.002) return { ox: 0, oy: 0, w: rect.width, h: rect.height };
-    let w, h;
-    if (curA >= a0) { h = rect.height; w = h * a0; } else { w = rect.width; h = w / a0; }
-    return { ox: (rect.width - w) / 2, oy: (rect.height - h) / 2, w, h };
-  }
+  const strokeBox = (st) => fitBox(rect.width, rect.height, st.a);
   const toPx = (pt, box) => ({ x: box.ox + pt.xr * box.w, y: box.oy + pt.yr * box.h });
+  const pct = (r) => (Math.round(r * 1e4) / 1e2) + '%';   // ratio → CSS percent (2 decimals)
+  const clamp01 = (v) => Math.min(1, Math.max(0, v));
   // ratio point, rounded to 4 decimals (sub-pixel at 8K, ~60% smaller when serialized)
   const toRatio = (p) => ({ xr: Math.round(p.x / rect.width * 1e4) / 1e4, yr: Math.round(p.y / rect.height * 1e4) / 1e4 });
   const luminance = (hex) => {
@@ -383,6 +502,106 @@ body.aht-noselect, body.aht-noselect * {
     const n = parseInt(m[1], 16);
     return (0.2126 * (n >> 16 & 255) + 0.7152 * (n >> 8 & 255) + 0.0722 * (n & 255)) / 255;
   };
+  // normalize a computed CSS colour (rgb(...)) back to hex so revived text keeps
+  // hex in the model (matches the swatch palette); pass through hex unchanged
+  function toHex(c) {
+    if (!c) return c;
+    if (/^#[0-9a-f]{6}$/i.exec(c)) return c;
+    const m = /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i.exec(c);
+    if (!m) return c;
+    const h = (n) => (+n).toString(16).padStart(2, '0');
+    return '#' + h(m[1]) + h(m[2]) + h(m[3]);
+  }
+  // Aspect-fit box of an original-aspect (a0) stroke inside a W×H target box —
+  // the ONE owner of the fit math: screen (via strokeBox), print, flatten and
+  // revive all agree by construction.
+  function fitBox(W, H, a0) {
+    const curA = W / H;
+    if (!a0 || Math.abs(curA - a0) < 0.002) return { ox: 0, oy: 0, w: W, h: H };
+    let w, h;
+    if (curA >= a0) { h = H; w = h * a0; } else { w = W; h = w / a0; }
+    return { ox: (W - w) / 2, oy: (H - h) / 2, w, h };
+  }
+  // Ink → SVG geometry within a W×H box. Returns { w, d } for a path or
+  // { w, circle:{cx,cy,r} } for a single-point dot. The quadratic control points
+  // ARE the original stroke points, so revive recovers the stroke losslessly.
+  function strokeGeom(st, W, H) {
+    const box = fitBox(W, H, st.a);
+    const P = (pt) => [Math.round((box.ox + pt.xr * box.w) * 100) / 100, Math.round((box.oy + pt.yr * box.h) * 100) / 100];
+    const w = Math.round(strokeWidth(st, box.w) * 100) / 100;
+    const pts = st.points;
+    if (pts.length === 1) { const p = P(pts[0]); return { w, circle: { cx: p[0], cy: p[1], r: Math.round(w / 2 * 100) / 100 } }; }
+    let d = 'M' + P(pts[0]).join(' ');
+    for (let i = 1; i < pts.length - 1; i++) {
+      const a = P(pts[i]), b = P(pts[i + 1]);
+      d += 'Q' + a.join(' ') + ' ' + ((a[0] + b[0]) / 2) + ' ' + ((a[1] + b[1]) / 2);
+    }
+    d += 'L' + P(pts[pts.length - 1]).join(' ');
+    return { w, d };
+  }
+  // Build one SVG node (path or circle) for a stroke, in `doc`, tagged with the
+  // model (data-aht-*) so revive is lossless. Used by print and flatten alike.
+  function strokeNode(doc, st, W, H) {
+    const g = strokeGeom(st, W, H);
+    let node;
+    if (g.circle) {
+      node = doc.createElementNS(NS, 'circle');
+      node.setAttribute('cx', g.circle.cx); node.setAttribute('cy', g.circle.cy);
+      node.setAttribute('r', g.circle.r); node.setAttribute('fill', st.color);
+      if (st.hl) node.setAttribute('fill-opacity', cfg.highlighterAlpha);
+    } else {
+      node = doc.createElementNS(NS, 'path');
+      node.setAttribute('d', g.d);
+      node.setAttribute('fill', 'none'); node.setAttribute('stroke', st.color);
+      node.setAttribute('stroke-width', g.w);
+      node.setAttribute('stroke-linecap', 'round'); node.setAttribute('stroke-linejoin', 'round');
+      if (st.hl) node.setAttribute('stroke-opacity', cfg.highlighterAlpha);
+    }
+    node.setAttribute('data-aht-w', st.width);
+    if (st.hl) node.setAttribute('data-aht-hl', '1');
+    // legacy pre-bw strokes render at constant px width — omit the attribute so
+    // the round trip keeps them that way instead of converting to box-scaled
+    if (st.bw) node.setAttribute('data-aht-bw', st.bw);
+    node.setAttribute('data-aht-a', st.a || Math.round(W / H * 1e4) / 1e4);
+    return node;
+  }
+  // One <svg viewBox="0 0 W H"> holding every stroke of a slide — the shared
+  // assembly for baked (flatten) and print overlays; callers position/tag it.
+  function strokesSvg(doc, strokes, W, H) {
+    const svg = doc.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    // highlighter first, then pen — mirror the screen's paint order (see redraw)
+    const ordered = strokes.filter((s) => s.hl).concat(strokes.filter((s) => !s.hl));
+    ordered.forEach((st) => { if (st.points.length) svg.appendChild(strokeNode(doc, st, W, H)); });
+    return svg;
+  }
+  // Build one editable HTML text element for a text item, in `doc`. Plain HTML
+  // (not vectorized): displays natively, stays editable anywhere, revives from
+  // its own attributes + text content.
+  function textNode(doc, t, W, H) {
+    const d = doc.createElement('div');
+    d.className = 'aht-text';
+    d.setAttribute('data-aht-text', '');
+    d.setAttribute('data-aht-size', t.size);
+    d.setAttribute('data-aht-a', t.a || Math.round(W / H * 1e4) / 1e4);
+    // weight/stretch ride along as data-* (deterministic revive of our own files)
+    // AND as real CSS below (so plugin-less display + foreign editors honour them)
+    if (t.bold) d.setAttribute('data-aht-bold', '1');
+    if (t.cond) d.setAttribute('data-aht-cond', '1');
+    d.setAttribute('style',
+      'position:absolute; left:' + pct(t.xr) + '; top:' + pct(t.yr) + ';'
+      + ' transform:translateY(-50%); color:' + t.color + '; font-size:' + fontPxIn(H, t.size) + 'px;'
+      + ' font-weight:' + (t.bold ? '700' : '400') + ';'
+      // font + alignment mirror the live edit box (.aht-text-edit), so baked and
+      // printed text share the screen's metrics; reveal themes centre text and
+      // set their own font, which would otherwise reflow multi-line annotations
+      + (t.cond ? ' font-stretch:75%; letter-spacing:-.02em; font-family:' + CONDENSED_FF + ';'
+                : " font-family:var(--aht-font, 'Open Sans', system-ui, sans-serif);")
+      + ' line-height:1.15; white-space:pre; text-align:left;');
+    d.textContent = t.text;
+    return d;
+  }
 
   function place() {
     // ink overlays the slide box — on normal slides AND boards alike: boards
@@ -394,14 +613,25 @@ body.aht-noselect, body.aht-noselect * {
     canvas.width = Math.max(1, Math.round(rect.width * dpr));
     canvas.height = Math.max(1, Math.round(rect.height * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    textLayer.style.left = rect.left + 'px'; textLayer.style.top = rect.top + 'px';
+    textLayer.style.width = rect.width + 'px'; textLayer.style.height = rect.height + 'px';
     redraw();
+    // rebuild the text overlay only for a NEW slide; a same-slide layout pass
+    // (resize burst, fonts settling) — or any pass during an edit — just
+    // rescales the existing boxes in place, never out from under a caret
+    if (state.editingText || textLayer._key === curKey()) repositionTexts();
+    else renderTexts();
   }
   function redraw() {
     // pre-'ready' adoption (late embed read, storage event) may land before
     // the first place(): nothing to paint yet — 'ready' → place() → redraw()
     if (!rect) return;
     ctx.clearRect(0, 0, rect.width, rect.height);
-    for (const st of (state.strokes[curKey()] || [])) drawStroke(st);
+    // highlighter strokes paint first, so pen ink lands on top of the marker
+    // (typed text is a separate layer above the canvas, so it's always on top)
+    const list = state.strokes[curKey()] || [];
+    for (const st of list) if (st.hl) drawStroke(st);
+    for (const st of list) if (!st.hl) drawStroke(st);
   }
   // strokes remember the slide-box width at draw time (bw) so line width scales
   // with the content instead of staying constant px (pre-bw strokes: as-is)
@@ -411,10 +641,13 @@ body.aht-noselect, body.aht-noselect * {
     if (!pts.length) return;
     const box = strokeBox(st);
     const w = strokeWidth(st, box.w);
+    ctx.save();
+    // the highlighter is a translucent marker; the pen is opaque
+    if (st.hl) ctx.globalAlpha = cfg.highlighterAlpha;
     ctx.strokeStyle = st.color; ctx.fillStyle = st.color; ctx.lineWidth = w;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     const p0 = toPx(pts[0], box);
-    if (pts.length === 1) { ctx.beginPath(); ctx.arc(p0.x, p0.y, w / 2, 0, Math.PI * 2); ctx.fill(); return; }
+    if (pts.length === 1) { ctx.beginPath(); ctx.arc(p0.x, p0.y, w / 2, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
     ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
     for (let i = 1; i < pts.length - 1; i++) {
       const a = toPx(pts[i], box), b = toPx(pts[i + 1], box);
@@ -422,27 +655,30 @@ body.aht-noselect, body.aht-noselect * {
     }
     const last = toPx(pts[pts.length - 1], box);
     ctx.lineTo(last.x, last.y); ctx.stroke();
+    ctx.restore();
   }
 
   // ---------- undo + persistence ----------
   // Shallow snapshot is enough: stroke objects are never mutated once another
   // stroke begins (the pen appends to a NEW object; erase/clear replace arrays).
-  function pushUndo() {
-    const id = curKey();
-    (state.undo[id] = state.undo[id] || []).push((state.strokes[id] || []).slice());
-    if (state.undo[id].length > 100) state.undo[id].shift();
-    state.redo[id] = [];   // a new action invalidates the redo branch
-  }
+  // A snapshot captures BOTH ink and text for the slide (see snapshot() above),
+  // so one undo stack reverts either kind — or a mix — in creation order.
+  function pushUndo() { commitSnapshot(curKey(), snapshot(curKey())); }
   // undo and redo are the same move with the two stacks swapped
   function shiftStack(from, to) {
+    // commit an open edit FIRST: its commitSnapshot may replace state.redo[id],
+    // and a stack reference taken before that would pop from the orphaned array
+    if (state.editingText) commitEditing();
     const id = curKey(), stack = from[id];
     if (!stack || !stack.length) return;
-    (to[id] = to[id] || []).push((state.strokes[id] || []).slice());
-    state.strokes[id] = stack.pop(); redraw(); save();
+    (to[id] = to[id] || []).push(snapshot(id));
+    const snap = stack.pop();
+    state.strokes[id] = snap.strokes; state.texts[id] = snap.texts;
+    redraw(); renderTexts(); save();
   }
   const undo = () => shiftStack(state.undo, state.redo);
   const redo = () => shiftStack(state.redo, state.undo);
-  const envelope = () => ({ v: 1, strokes: state.strokes, boards: state.boards });
+  const envelope = () => ({ v: 1, strokes: state.strokes, texts: state.texts, boards: state.boards });
   function save() { if (!cfg.persist) return; try { localStorage.setItem(cfg.storageKey, JSON.stringify(envelope())); } catch (e) {} }
   // Accepts the v1 envelope or the legacy bare strokes map ('h-v' index keys,
   // pre-v0.3) — legacy keys are remapped to the current slides' stable keys.
@@ -457,9 +693,9 @@ body.aht-noselect, body.aht-noselect * {
         // trust it
         const boards = (Array.isArray(d.boards) ? d.boards : []).filter((b) => b && typeof b === 'object');
         boards.forEach((b) => { b.bg = b.bg === 'white' ? 'white' : 'dark'; });
-        return { strokes: d.strokes || {}, boards: boards };
+        return { strokes: d.strokes || {}, texts: (d.texts && typeof d.texts === 'object') ? d.texts : {}, boards: boards };
       }
-      return { strokes: migrateIndexKeys(d), boards: [] };
+      return { strokes: migrateIndexKeys(d), texts: {}, boards: [] };
     } catch (e) { return null; }
   }
   function migrateIndexKeys(old) {
@@ -475,11 +711,11 @@ body.aht-noselect, body.aht-noselect * {
     }
     return out;
   }
-  // the one name every encoding of the embedded block shares: the DOM reader
-  // below, and the source matcher + builder in saveCopy
+  // the one name every reader of the legacy embedded block shares
   const EMBED_ATTR = 'data-aht-annotations';
+  const embeddedIn = (doc) => doc.querySelector('script[type="application/json"][' + EMBED_ATTR + ']');
   function readEmbedded() {
-    const n = document.querySelector('script[type="application/json"][' + EMBED_ATTR + ']');
+    const n = embeddedIn(document);
     if (!n) return null;
     return parseEnvelope(n.textContent);
   }
@@ -489,7 +725,7 @@ body.aht-noselect, body.aht-noselect * {
     if (cfg.persist) { try { const s = localStorage.getItem(cfg.storageKey); if (s) env = parseEnvelope(s); } catch (e) {} }
     // no local state (not even a cleared-empty one) → adopt the deck's baseline
     if (!env) env = readEmbedded();
-    if (env) { state.strokes = env.strokes || {}; state.boards = env.boards || []; }
+    if (env) { state.strokes = env.strokes || {}; state.texts = env.texts || {}; state.boards = env.boards || []; }
     else if (onLate && document.readyState === 'loading') {
       // a saved copy appends its annotations block just before </body> —
       // BEHIND the script that runs Reveal.initialize(), and plugin init
@@ -519,12 +755,18 @@ body.aht-noselect, body.aht-noselect * {
     rect = canvas.getBoundingClientRect();   // refresh once per gesture (zoom-safe)
     const p = xy(e);
     if (state.tool === 'eraser') { state.drawing = 'erase'; eraseSnapped = false; eraseAt(p); return; }
-    pushUndo();   // the pen always commits at least a dot — snapshot up front
+    pushUndo();   // the pen/highlighter always commit at least a dot — snapshot up front
     state.drawing = 'pen';
-    state.cur = { color: state.color, width: state.width, a: aspect(), bw: Math.round(rect.width), points: [toRatio(p)] };
+    const hl = state.tool === 'highlighter';
+    const width = hl ? cfg.highlighterWidth : state.width;
+    state.cur = { color: state.color, width: width, a: aspect(), bw: Math.round(rect.width), points: [toRatio(p)] };
+    if (hl) state.cur.hl = true;
     const id = curKey();
     (state.strokes[id] = state.strokes[id] || []).push(state.cur);
-    ctx.fillStyle = state.color; ctx.beginPath(); ctx.arc(p.x, p.y, state.width / 2, 0, Math.PI * 2); ctx.fill();
+    // highlighter: repaint the whole stroke each frame (one translucent path, no
+    // beaded overlaps at the joins); pen: draw the opening dot straight to canvas
+    if (hl) redraw();
+    else { ctx.fillStyle = state.color; ctx.beginPath(); ctx.arc(p.x, p.y, width / 2, 0, Math.PI * 2); ctx.fill(); }
   }
   function onMove(e) {
     if (!state.on || !state.drawing || e.pointerId !== state.pid) return;
@@ -536,6 +778,9 @@ body.aht-noselect, body.aht-noselect * {
     const prev = { x: pts[pts.length - 1].xr * rect.width, y: pts[pts.length - 1].yr * rect.height };
     if (Math.abs(p.x - prev.x) < 1.5 && Math.abs(p.y - prev.y) < 1.5) return;  // thin out jitter
     pts.push(toRatio(p));
+    // highlighter needs a clean full repaint so its translucency doesn't stack
+    // at the segment joins; the opaque pen draws just the new segment
+    if (state.cur.hl) { redraw(); return; }
     ctx.strokeStyle = state.color; ctx.lineWidth = state.width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
   }
@@ -565,6 +810,183 @@ body.aht-noselect, body.aht-noselect * {
     }
   }
 
+  // ---------- typed text ----------
+  // Text is a first-class annotation type, HTML/DOM end-to-end: a live overlay
+  // of contenteditable boxes (this section), the same shape baked into slides on
+  // flatten, and revived from that same HTML. Model per item, keyed like ink:
+  //   { xr, yr, size, color, a, text }  in state.texts[key]
+  // xr = left-edge ratio, yr = vertical-CENTRE ratio, size = fraction of the
+  // slide-box height (so text scales with the slide, like ink line width).
+  const fontPxIn = (H, size) => Math.round(H * size * 100) / 100;   // size fraction → px in an H-tall box
+  const fontPx = (size) => fontPxIn(rect ? rect.height : 700, size);
+  // a size preset is {size, bold?, cond?}; a bare number means size-only
+  const asPreset = (v) => (v && typeof v === 'object') ? v : { size: v };
+  const CONDENSED_FF = "var(--aht-font-condensed, var(--aht-font, 'Open Sans', system-ui, sans-serif))";
+  const isBold = (w) => /^(bold(er)?|[6-9]\d\d)$/.test(String(w || '').trim());
+  const isCond = (s) => { s = String(s || '').trim(); if (!s) return false; if (/condensed|narrow/i.test(s)) return true; const n = parseFloat(s); return isFinite(n) && n < 100; };
+  // apply a text item's size + style (weight/condensed) to its live edit box, so
+  // the caret box is WYSIWYG with the baked/printed output
+  function styleEdit(elm, t) {
+    elm.style.fontSize = fontPx(t.size) + 'px';
+    elm.style.fontWeight = t.bold ? '700' : '400';
+    elm.style.fontStretch = t.cond ? '75%' : '';
+    elm.style.letterSpacing = t.cond ? '-.02em' : '';
+    elm.style.fontFamily = t.cond ? CONDENSED_FF : '';
+  }
+  const textList = (id) => (state.texts[id] = state.texts[id] || []);
+  const liveTexts = (id) => (state.texts[id] || []).filter((t) => t.text && t.text.trim());
+  // innerText (not textContent): it preserves the visual line breaks browsers
+  // insert while typing; normalize their &nbsp; to spaces, drop the trailing \n
+  const readText = (edit) => edit.innerText.replace(/\u00a0/g, ' ').replace(/\n$/, '');
+  function snapshot(id) {
+    return {
+      strokes: (state.strokes[id] || []).slice(),
+      texts: (state.texts[id] || []).map((o) => Object.assign({}, o)),
+    };
+  }
+  function commitSnapshot(id, snap) {   // record one undoable action from a pre-captured snapshot
+    (state.undo[id] = state.undo[id] || []).push(snap);
+    if (state.undo[id].length > 100) state.undo[id].shift();
+    state.redo[id] = [];
+  }
+  const positionItem = (item) => { item.style.left = pct(item._t.xr); item.style.top = pct(item._t.yr); };
+  // The text layer and its children receive pointer events ONLY while the Text
+  // tool is live — updateLayers() + the layer CSS own that invariant, so the
+  // handlers below need no tool checks of their own.
+  function buildTextItem(t) {
+    const item = el('div', { class: 'aht-text-item' });
+    item._t = t;
+    item._key = curKey();   // items are only ever built for the current slide
+    positionItem(item);
+    item.style.transform = 'translateY(-50%)';
+    // tools are SIBLINGS of the editable div, never inside it (would become content)
+    const tools = el('div', { class: 'aht-text-tools' });
+    const grip = el('span', { class: 'aht-text-grip', title: 'Drag to move' }, ICONS.grip);
+    const del = btn({ class: 'aht-text-del', title: 'Delete text' }, ICONS.trash, (e) => { e.stopPropagation(); removeTextItem(item); });
+    tools.appendChild(grip); tools.appendChild(del);
+    const edit = item._edit = el('div', { class: 'aht-text-edit' });
+    edit.textContent = t.text || '';
+    edit.style.color = t.color;
+    styleEdit(edit, t);
+    // the model follows every keystroke, so anything reading it mid-edit
+    // (print, JSON export, the pre-delete snapshot) sees the live text
+    edit.addEventListener('input', () => { t.text = readText(edit); item._dirty = true; });
+    edit.addEventListener('pointerdown', (e) => e.stopPropagation());
+    edit.addEventListener('click', () => { if (state.editingText !== item) startEditing(item); });
+    item.appendChild(tools); item.appendChild(edit);
+    initTextDrag(grip, item);
+    return item;
+  }
+  function renderTexts() {
+    if (state.editingText) return;   // never rebuild out from under an active caret
+    textLayer._key = curKey();       // memo for place(): which slide this layer shows
+    textLayer.textContent = '';
+    (state.texts[textLayer._key] || []).forEach((t) => textLayer.appendChild(buildTextItem(t)));
+  }
+  function repositionTexts() {   // layout pass: update font px in place, keep any caret
+    Array.prototype.forEach.call(textLayer.children, (item) => {
+      styleEdit(item._edit, item._t);
+    });
+  }
+  function startEditing(item) {
+    if (state.editingText && state.editingText !== item) commitEditing();
+    if (!item._preSnap) { item._preSnap = snapshot(item._key); item._isNew = false; item._dirty = false; }
+    item.classList.add('editing');
+    item._edit.setAttribute('contenteditable', 'true');
+    state.editingText = item;
+    item._edit.focus();
+    const r = document.createRange(); r.selectNodeContents(item._edit); r.collapse(false);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  }
+  // Commit updates the item IN PLACE (no full rebuild) so that clicking straight
+  // from one box to another in the same gesture doesn't detach the target node.
+  function commitEditing() {
+    const item = state.editingText;
+    if (!item) return;
+    state.editingText = null;
+    item._edit.setAttribute('contenteditable', 'false');
+    item.classList.remove('editing');
+    const id = item._key, t = item._t;
+    t.text = readText(item._edit);
+    const preSnap = item._preSnap; const isNew = item._isNew; const dirty = item._dirty;
+    item._preSnap = null; item._isNew = false; item._dirty = false;
+    if (!t.text.trim()) {
+      // empty: discard the box. A brand-new empty box leaves no undo entry.
+      if (!isNew) commitSnapshot(id, preSnap);
+      removeFromModel(id, t); item.remove();
+      if (!isNew) save();
+      return;
+    }
+    if (isNew || dirty) { commitSnapshot(id, preSnap); save(); }
+  }
+  function removeFromModel(id, t) {
+    const list = state.texts[id]; if (!list) return;
+    const i = list.indexOf(t); if (i >= 0) list.splice(i, 1);
+  }
+  function removeTextItem(item) {
+    if (state.editingText === item) state.editingText = null;
+    const id = item._key;
+    commitSnapshot(id, snapshot(id));   // model is input-synced: undo restores what the user saw
+    removeFromModel(id, item._t); item.remove(); save();
+  }
+  function addTextAt(xr, yr) {
+    const id = curKey();
+    const pre = snapshot(id);
+    const t = { xr: clamp01(xr), yr: clamp01(yr), size: state.size, color: state.color, a: aspect(), text: '', bold: state.bold, cond: state.cond };
+    textList(id).push(t);
+    const item = buildTextItem(t);
+    item._isNew = true; item._preSnap = pre; item._dirty = false;
+    textLayer.appendChild(item);
+    startEditing(item);
+  }
+  function initTextDrag(grip, item) {
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+      const id = item._key, t = item._t;
+      const pre = snapshot(id);
+      const start = { x: e.clientX, y: e.clientY, xr: t.xr, yr: t.yr };
+      let moved = false;
+      const move = (ev) => {
+        if (!rect) return;
+        t.xr = clamp01(start.xr + (ev.clientX - start.x) / rect.width);
+        t.yr = clamp01(start.yr + (ev.clientY - start.y) / rect.height);
+        positionItem(item);
+        moved = true;
+      };
+      const up = () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        if (!moved) return;
+        // dragging the box being edited folds into that edit session: its
+        // _preSnap predates the drag, so commit records ONE chronological entry
+        if (state.editingText === item) item._dirty = true;
+        else { commitSnapshot(id, pre); save(); }
+      };
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+  }
+  // click empty layer (Text tool) → drop a new box there and start typing
+  function onTextLayerDown(e) {
+    if (e.target !== textLayer) return;   // clicks on an item are handled by the item
+    e.preventDefault();
+    rect = textLayer.getBoundingClientRect();   // refresh once per gesture (zoom-safe, like onDown)
+    addTextAt((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);
+  }
+  // clicking anywhere outside the editing box (except the annotation bar, whose
+  // colour/size controls act ON the edit) commits it — capture phase, so it runs
+  // before the layer's own empty-click handler creates the next box
+  function onDocDownForText(e) {
+    if (!state.editingText) return;
+    const item = state.editingText;
+    if (item.contains(e.target)) return;
+    if (bar && bar.contains(e.target)) return;
+    commitEditing();
+  }
+
   // ---------- DOM + icons ----------
   function el(tag, attrs, html) {
     const n = document.createElement(tag);
@@ -576,14 +998,19 @@ body.aht-noselect, body.aht-noselect * {
   const S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
   const ICONS = {
     pen: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}>${paths(PEN_D)}</svg>`,
+    highlighter: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}>${paths(HL_D)}</svg>`,
     eraser: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}>${paths(ERASER_D)}</svg>`,
+    // lucide "type": a capital T — the typed-text annotation tool
+    type: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg>`,
     undo: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>`,
     redo: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>`,
-    // lucide brush-cleaning: sweep this slide clean; with a sparkle on top it
-    // means "sweep the whole deck"
-    clean: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="m16 22-1-4"/><path d="M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1"/><path d="M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z"/><path d="m8 22 1-4"/></svg>`,
-    cleanAll: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="m16 22-1-4"/><path d="M19 14a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2h-3a1 1 0 0 1-1-1V4a2 2 0 0 0-4 0v5a1 1 0 0 1-1 1H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1"/><path d="M19 14H5l-1.973 6.767A1 1 0 0 0 4 22h16a1 1 0 0 0 .973-1.233z"/><path d="m8 22 1-4"/><path d="M20 2v4"/><path d="M22 4h-4"/></svg>`,
+    // lucide broom: sweep this slide clean; broom-sparkles (with the sparkle
+    // marks) means "sweep the whole deck"
+    clean: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M13.5 10.5 22 2"/><path d="M14.734 13.841a2 2 0 0 0-.314-2.42L12.58 9.58a2 2 0 0 0-2.421-.314l-7.657 4.461A1 1 0 0 0 2.3 15.3l6.403 6.403a1 1 0 0 0 1.571-.204z"/><path d="m5 18 2-2"/><path d="m7.699 10.7 5.602 5.601"/></svg>`,
+    cleanAll: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M11 2v2"/><path d="M12 3h-2"/><path d="M13.5 10.5 22 2"/><path d="M14.734 13.841a2 2 0 0 0-.314-2.42L12.58 9.58a2 2 0 0 0-2.421-.314l-7.657 4.461A1 1 0 0 0 2.3 15.3l6.403 6.403a1 1 0 0 0 1.571-.204z"/><path d="M20 15v4"/><path d="M22 17h-4"/><path d="M4 4v4"/><path d="m5 18 2-2"/><path d="M6 6H2"/><path d="m7.699 10.7 5.602 5.601"/></svg>`,
     x: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`,
+    // lucide trash-2: the delete affordance on a text box
+    trash: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`,
     maximize: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`,
     minimize: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>`,
     grid: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" ${S}><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>`,
@@ -661,8 +1088,14 @@ body.aht-noselect, body.aht-noselect * {
 
     // annotation toolbar (bottom-centre, shown while drawing)
     bar = el('div', { id: 'aht-bar', hidden: '' });
+    // Chromium focuses a <button> on mousedown, which would blur the caret out
+    // of a text box being edited (bar clicks deliberately don't commit — colour
+    // and size act ON the edit). Suppress the focus steal; click still fires.
+    bar.addEventListener('mousedown', (e) => e.preventDefault());
     const penBtn = btn({ 'data-tool': 'pen', title: 'Pen (A)' }, ICONS.pen, () => setTool('pen'));
+    const hlBtn = btn({ 'data-tool': 'highlighter', title: 'Highlighter (H)' }, ICONS.highlighter, () => setTool('highlighter'));
     const eraBtn = btn({ 'data-tool': 'eraser', title: 'Eraser (E)' }, ICONS.eraser, () => setTool('eraser'));
+    const txtBtn = btn({ 'data-tool': 'text', title: 'Text (T)' }, ICONS.type, () => setTool('text'));
 
     const swatches = el('span', { class: 'aht-swatches' });
     cfg.colors.forEach((c) => {
@@ -678,6 +1111,15 @@ body.aht-noselect, body.aht-noselect * {
         '<span style="width:' + (w + 4) + 'px;height:' + (w + 4) + 'px"></span>', () => setWidth(w)));
     });
 
+    // text-size presets (S/M/L) — picking one switches to the Text tool and
+    // carries that preset's style (size + optional bold / condensed)
+    const sizes = el('span', { class: 'aht-sizes' });
+    Object.entries(cfg.textSizes).forEach(([name, raw]) => {
+      const p = asPreset(raw);
+      sizes.appendChild(btn({ class: 'aht-size ' + name.toLowerCase(), 'data-size': p.size, title: name + ' text' },
+        '<span>' + name + '</span>', () => setSize(p)));
+    });
+
     const grip = el('span', { class: 'aht-grip', title: 'Drag to move this toolbar' }, ICONS.grip);
     initBarDrag(grip);
     const minBtn = btn({ id: 'aht-minbtn', title: 'Minimize toolbar' }, ICONS.chevDown, () => {
@@ -685,11 +1127,11 @@ body.aht-noselect, body.aht-noselect * {
       applyBarPos(); saveUI();
     });
 
-    [grip, penBtn, eraBtn,
+    [grip, penBtn, hlBtn, eraBtn, txtBtn,
       btn({ title: 'Undo (Ctrl+Z)' }, ICONS.undo, undo),
       btn({ id: 'aht-redo', title: 'Redo (Ctrl+Shift+Z)' }, ICONS.redo, redo),
-      btn({ id: 'aht-clear', title: 'Clear all ink on this slide (X)' }, ICONS.clean, clearSlide),
-      sep(), swatches, sep(), widths, sep(),
+      btn({ id: 'aht-clear', title: 'Clear ink and text on this slide (X)' }, ICONS.clean, clearSlide),
+      sep(), swatches, sep(),
       btn({ id: 'aht-board', title: 'Insert board slide' }, ICONS.board, () => (onBoard() ? removeBoardConfirmed() : addBoard())),
       btn({ id: 'aht-surface', title: 'Board surface: dark / white', hidden: '' }, ICONS.contrast, toggleSurface),
       sep(),
@@ -698,6 +1140,11 @@ body.aht-noselect, body.aht-noselect * {
       minBtn,
       btn({ title: 'Exit annotation (A / Esc)' }, ICONS.x, () => enable(false)),
     ].forEach((n) => bar.appendChild(n));
+    // stroke widths / text sizes live in a panel that floats above the pen or
+    // the text button (whichever tool is active) — positioned by syncToolRow()
+    const toolRow = el('div', { class: 'aht-toolrow' });
+    toolRow.appendChild(widths); toolRow.appendChild(sizes);
+    bar.appendChild(toolRow);
     document.body.appendChild(bar);
     applyBarPos();
     syncUI();
@@ -737,9 +1184,9 @@ body.aht-noselect, body.aht-noselect * {
     const item = (icon, label, hint, fn) => btn({ class: 'aht-export-item' },
       icon + '<span>' + label + '<small>' + hint + '</small></span>',
       () => { closeExport(); fn(); });
-    box.appendChild(item(ICONS.saveClean, 'Save a copy', 'single HTML file, no ink', () => saveCopy(false)));
+    box.appendChild(item(ICONS.saveClean, 'Save a copy', 'single HTML file, no annotations', () => saveCopy(false)));
     if (cfg.annotations) {
-      box.appendChild(item(ICONS.save, 'Save annotated copy', 'ink &amp; boards embedded', () => saveCopy(true)));
+      box.appendChild(item(ICONS.save, 'Save portable copy', 'annotations baked into the slides', () => savePortable()));
       box.appendChild(item(ICONS.printInk, 'PDF / print with ink', 'opens the browser’s print dialog', () => openPrint(true)));
     }
     box.appendChild(item(ICONS.print, 'PDF / print clean', 'slides only', () => openPrint(false)));
@@ -791,9 +1238,15 @@ body.aht-noselect, body.aht-noselect * {
       const r = bar.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       const move = (ev) => { barPos = Object.assign({}, barPos, { x: ev.clientX - dx, y: ev.clientY - dy }); applyBarPos(); };
-      const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); saveUI(); };
+      const up = () => {
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        saveUI();
+      };
       grip.addEventListener('pointermove', move);
       grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
     });
   }
 
@@ -802,6 +1255,20 @@ body.aht-noselect, body.aht-noselect * {
     bar.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.getAttribute('data-tool') === state.tool));
     bar.querySelectorAll('.aht-swatch').forEach((b) => b.classList.toggle('active', b.getAttribute('data-color') === state.color));
     bar.querySelectorAll('.aht-w').forEach((b) => b.classList.toggle('active', +b.getAttribute('data-w') === state.width));
+    bar.querySelectorAll('.aht-size').forEach((b) => b.classList.toggle('active', +b.getAttribute('data-size') === state.size));
+    syncToolRow();
+  }
+  // the width/size panel follows the active tool: shown above the pen (widths)
+  // or the text button (sizes), hidden for the eraser. Visibility is CSS-driven
+  // off the tool-* class (so .min still hides it); JS only sets the left offset
+  // that centres the panel over the button.
+  function syncToolRow() {
+    if (!bar) return;
+    bar.classList.toggle('tool-pen', state.tool === 'pen');
+    bar.classList.toggle('tool-text', state.tool === 'text');
+    const toolRow = bar.querySelector('.aht-toolrow');
+    const anchor = bar.querySelector(state.tool === 'text' ? '[data-tool="text"]' : '[data-tool="pen"]');
+    if (toolRow && anchor) toolRow.style.left = (anchor.offsetLeft + anchor.offsetWidth / 2) + 'px';
   }
   // board-context controls: the board button flips to "remove" on a board
   // slide, and the surface (dark/white) toggle only shows there
@@ -824,41 +1291,87 @@ body.aht-noselect, body.aht-noselect * {
   function render() {
     const ov = state.overview;
     canvas.style.display = ov ? 'none' : '';
-    canvas.classList.toggle('active', state.on);
+    textLayer.style.display = ov ? 'none' : '';
     document.body.classList.toggle('aht-noselect', state.on);
     bar.hidden = !state.on || ov;
     launch.hidden = state.on || ov;
-    if (!bar.hidden) applyBarPos();   // re-clamp the (possibly dragged) bar
+    updateLayers();
+    if (!bar.hidden) { applyBarPos(); syncUI(); }   // re-clamp the (possibly dragged) bar
+  }
+  // exactly one overlay is pointer-interactive at a time: the ink canvas for
+  // pen/eraser, the text overlay for the Text tool; neither in overview or when
+  // annotation is off (so taps navigate and clicks reach the slide)
+  function updateLayers() {
+    const live = state.on && !state.overview;
+    const textMode = live && state.tool === 'text';
+    canvas.classList.toggle('active', live && !textMode);
+    textLayer.classList.toggle('active', textMode);
   }
 
   // ---------- actions ----------
   function enable(v) {
+    if (!v && state.editingText) commitEditing();
     state.on = v;
     if (v) place();
     render();
     setChrome(v ? false : noHover);   // hide toolbar while drawing; on touch, restore it after
   }
-  function setTool(t) { state.tool = t; canvas.classList.toggle('erasing', t === 'eraser'); syncUI(); }
-  function setColor(c) { state.color = c; setTool('pen'); }
+  function setTool(t) {
+    if (state.tool !== t && state.editingText) commitEditing();
+    state.tool = t;
+    canvas.classList.toggle('erasing', t === 'eraser');
+    canvas.classList.toggle('highlighting', t === 'highlighter');
+    updateLayers(); syncUI();
+  }
+  // colour picking: from the eraser it drops to the pen; the pen and highlighter
+  // keep their tool (just recolour); for text it recolours the box being edited
+  // (and future text) without leaving the Text tool
+  function setColor(c) {
+    state.color = c;
+    if (state.tool === 'eraser') { setTool('pen'); return; }   // a colour picks a drawing tool
+    if (state.tool !== 'text') { syncUI(); return; }           // pen / highlighter keep their tool
+    const item = state.editingText;
+    if (item && item._t.color !== c) { item._t.color = c; item._dirty = true; item._edit.style.color = c; }
+    syncUI();
+  }
   function setWidth(w) { state.width = w; syncUI(); }
+  // size picking: switches to the Text tool (like a colour switches to the pen);
+  // resizes the box being edited if any
+  function setSize(p) {
+    const preset = asPreset(p);
+    state.size = preset.size; state.bold = !!preset.bold; state.cond = !!preset.cond;
+    const item = state.editingText;
+    if (item) {
+      const t = item._t;
+      if (t.size !== state.size || !!t.bold !== state.bold || !!t.cond !== state.cond) {
+        t.size = state.size; t.bold = state.bold; t.cond = state.cond; item._dirty = true;
+        styleEdit(item._edit, t);
+      }
+    }
+    if (state.tool !== 'text') setTool('text');
+    else syncUI();
+  }
   function clearSlide() {
-    if (!(state.strokes[curKey()] || []).length) return;   // a no-op must not wipe the redo branch
-    pushUndo(); state.strokes[curKey()] = []; redraw(); save();
+    const id = curKey();
+    if (!(state.strokes[id] || []).length && !(state.texts[id] || []).length) return;   // a no-op must not wipe the redo branch
+    if (state.editingText) commitEditing();
+    pushUndo(); state.strokes[id] = []; state.texts[id] = []; redraw(); renderTexts(); save();
   }
   // clearAll wipes ink AND board slides and writes an EMPTY envelope (not
   // removeItem): the empty local state doubles as the tombstone that keeps a
   // deck-embedded baseline from resurrecting on the next load.
   function clearAll() {
+    state.editingText = null;   // the box is going away with everything else — no commit
     const cur = state.Reveal.getCurrentSlide();
     if (boardIdOf(cur)) state.Reveal.slide(Math.max(0, state.Reveal.getIndices().h - 1));
-    state.strokes = {}; state.undo = {}; state.redo = {};
+    state.strokes = {}; state.texts = {}; state.undo = {}; state.redo = {};
     const had = state.boards.length;
     state.boards = [];
     slidesEl.querySelectorAll('[data-aht-board]').forEach((s) => s.remove());
     if (had) state.Reveal.sync();
-    save(); redraw(); updateSlideNo(); syncBoardUI();
+    save(); redraw(); renderTexts(); updateSlideNo(); syncBoardUI();
   }
-  const clearAllConfirmed = () => confirmBox('Delete all ink and board slides in this deck?', 'Delete', clearAll);
+  const clearAllConfirmed = () => confirmBox('Delete all annotations and board slides in this deck?', 'Delete', clearAll);
 
   // ---------- board slides ----------
   // A board is a REAL <section> inserted after the current slide — it shows in
@@ -869,37 +1382,53 @@ body.aht-noselect, body.aht-noselect * {
   // the surface is painted on the SECTION via the [data-aht-surface] CSS above
   // (not data-background-color: reveal paints those across the whole viewport,
   // but a board keeps the deck's slide format)
-  function boardSection(b) {
-    const s = el('section', {
-      'data-aht-board': b.id,
-      'data-visibility': 'uncounted',
-      'data-aht-surface': b.bg,
-    });
-    keyCache.set(s, 'b:' + b.id);
+  function boardSection(b, doc) {
+    const s = (doc || document).createElement('section');
+    s.setAttribute('data-aht-board', b.id);
+    s.setAttribute('data-visibility', 'uncounted');
+    s.setAttribute('data-aht-surface', b.bg);
+    keyCache.set(s, 'b:' + b.id);   // harmless for foreign docs (WeakMap, GC'd with them)
     return s;
   }
-  function topLevelOf(s) {
+  function topLevelOf(s, root) {
     let n = s;
-    while (n.parentElement && n.parentElement !== slidesEl) n = n.parentElement;
+    root = root || slidesEl;
+    while (n.parentElement && n.parentElement !== root) n = n.parentElement;
     return n;
   }
-  // Re-insert persisted boards into the DOM (load, import, storage sync, print).
-  // Anchor slides are found by stable key; a board whose anchor was deleted
-  // from the deck goes to the end rather than being lost.
-  function materializeBoards() {
+  // Re-insert persisted boards after their anchor slides, found by stable key —
+  // into the LIVE deck (load, import, storage sync, print) or a parsed source
+  // document (flatten). A board whose anchor was deleted from the deck goes to
+  // the end rather than being lost. New sections are added to keyMap.
+  function materializeBoardsIn(root, keyMap) {
+    // reconcile, not just add: a board section whose board left the model — a
+    // baked board deleted in an earlier session (localStorage tombstone), or
+    // still present in a fetched source — is pruned, so it neither reappears in
+    // the deck nor resurrects in the next portable copy
+    root.querySelectorAll('section[data-aht-board]').forEach((s) => {
+      if (!boardById(s.getAttribute('data-aht-board'))) s.remove();
+    });
+    const byKey = new Map();
+    keyMap.forEach((k, s) => { if (!byKey.has(k)) byKey.set(k, s); });
     state.boards.forEach((b) => {
-      if (slidesEl.querySelector('[data-aht-board="' + b.id + '"]')) return;
-      const sec = boardSection(b);
-      const anchor = leafSections().find((s) => keyCache.get(s) === b.after);
+      if (root.querySelector('[data-aht-board="' + b.id + '"]')) return;
+      const sec = boardSection(b, root.ownerDocument);
+      const anchor = byKey.get(b.after);
       if (anchor) {
-        let ref = topLevelOf(anchor);
+        let ref = topLevelOf(anchor, root);
         // boards of the same anchor keep their array order in the deck
         while (ref.nextElementSibling && ref.nextElementSibling.hasAttribute('data-aht-board')) ref = ref.nextElementSibling;
         ref.after(sec);
       } else {
-        slidesEl.appendChild(sec);
+        root.appendChild(sec);
       }
+      keyMap.set(sec, 'b:' + b.id);
     });
+  }
+  function materializeBoards() {
+    const keyMap = new Map();
+    leafSections().forEach((s) => keyMap.set(s, keyCache.get(s)));
+    materializeBoardsIn(slidesEl, keyMap);
   }
   function addBoard() {
     const cur = state.Reveal.getCurrentSlide();
@@ -925,14 +1454,15 @@ body.aht-noselect, body.aht-noselect * {
     const i = state.boards.findIndex((b) => b.id === id);
     if (i >= 0) state.boards.splice(i, 1);
     delete state.strokes['b:' + id];
+    delete state.texts['b:' + id];
     delete state.undo['b:' + id];
     delete state.redo['b:' + id];
     state.Reveal.slide(Math.max(0, state.Reveal.getIndices().h - 1));
     cur.remove();
     state.Reveal.sync();
-    save(); redraw(); updateSlideNo(); syncBoardUI();
+    save(); redraw(); renderTexts(); updateSlideNo(); syncBoardUI();
   }
-  const removeBoardConfirmed = () => confirmBox('Delete this board slide and its ink?', 'Delete', removeBoard);
+  const removeBoardConfirmed = () => confirmBox('Delete this board slide and its annotations?', 'Delete', removeBoard);
   function toggleSurface() {
     const b = boardById(boardIdOf(state.Reveal.getCurrentSlide()));
     if (!b) return;
@@ -972,9 +1502,10 @@ body.aht-noselect, body.aht-noselect * {
   // Adopt a full annotation state (another window via the storage event):
   // swap strokes, reconcile board sections, redraw.
   function adoptEnvelope(env, persistIt) {
-    if (state.drawing) return;   // never swap strokes out from under an in-flight stroke
+    if (state.drawing || state.editingText) return;   // never swap out from under an in-flight stroke/edit
     const sameBoards = JSON.stringify(state.boards) === JSON.stringify(env.boards || []);
     state.strokes = env.strokes || {};
+    state.texts = env.texts || {};
     state.undo = {}; state.redo = {};
     if (!sameBoards) {
       const curId = boardIdOf(state.Reveal.getCurrentSlide());
@@ -986,81 +1517,310 @@ body.aht-noselect, body.aht-noselect * {
       materializeBoards();
       state.Reveal.sync();
     }
-    redraw(); updateSlideNo(); syncBoardUI(); ensureContrast();
+    redraw(); renderTexts(); updateSlideNo(); syncBoardUI(); ensureContrast();
     if (persistIt) save();
   }
-  // "Save a copy": fetch this deck's own HTML source and download it as a
-  // single self-contained file — with the ink spliced in as an embedded block
-  // (withInk, the default), or with any embedded block stripped (a clean,
-  // shareable deck). The SOURCE is modified, not the live DOM, so no plugin UI
-  // (and no runtime board section) leaks into it.
-  // The plugin's own <script src> is replaced by an INLINE copy of its source:
-  // a deck that loaded the plugin via a relative path would otherwise open as
-  // a blank page when the downloaded file is opened from another directory.
-  // (reveal itself should be loaded from absolute/CDN URLs to make the copy
-  // portable — relative reveal assets can't travel with a single file.)
-  function saveCopy(withInk) {
-    const ink = withInk !== false;
+  // Both "Save a copy" and "Save portable copy" fetch this deck's own HTML
+  // source and download a single self-contained file. The SOURCE is modified,
+  // not the live DOM, so no plugin UI (and no runtime board section) leaks in.
+  function fetchForCopy() {
     // module builds keep their tag untouched: inlining an ES module into a
     // classic <script> would throw on its import/export statements
     const tag = document.querySelector('script[src*="reveal-autohide-toolbar"]:not([type="module"])');
-    Promise.all([
+    return Promise.all([
       fetch(location.href, { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.text(); }),
       tag ? fetch(tag.src, { cache: 'no-store' }).then((r) => (r.ok ? r.text() : null)).catch(() => null) : null,
-    ])
-      .then(([src, pluginJs]) => {
-        // the embedded annotations block as it appears in HTML source (the DOM
-        // twin of this concept lives in readEmbedded, sharing EMBED_ATTR)
-        const blockRe = new RegExp('\\s*<script[^>]*' + EMBED_ATTR + '[^>]*>[\\s\\S]*?<\\/script>', 'i');
-        let out;
-        if (ink) {
-          const json = JSON.stringify(envelope()).replace(/<\//g, '<\\/');
-          // split tags so this source, when inlined into a copy, never contains
-          // a literal annotations-block tag itself
-          const block = '<' + 'script type="application/json" ' + EMBED_ATTR + '>' + json + '<' + '/script>';
-          // function replacement: stroke keys ('id:' + section id) and colors
-          // are author data — a string replacement would expand $-patterns
-          // ($&, $', …) in them and corrupt the copy
-          // replace-vs-append is decided by an explicit test — comparing the
-          // replace output to the input would misread a byte-identical re-save
-          // as "no block found" and append a duplicate
-          if (blockRe.test(src)) {
-            out = src.replace(blockRe, () => '\n' + block);
-          } else {
-            const i = src.toLowerCase().lastIndexOf('</body>');
-            out = i >= 0 ? src.slice(0, i) + block + '\n' + src.slice(i) : src + '\n' + block;
-          }
-        } else {
-          // the clean copy also sheds any block a previous save embedded
-          out = src.replace(blockRe, '');
-        }
-        if (pluginJs) {
-          // shed the long doc header (it also contains an example plugin
-          // <script src> tag, which must not survive into a self-contained
-          // copy); a one-line banner keeps the licence notice
-          const banner = '/* reveal.js-autohide-toolbar (inlined by "Save a copy") · MIT · '
-            + 'https://github.com/frankhuettner/reveal.js-autohide-toolbar */\n';
-          const compact = pluginJs.replace(/^\/\*[\s\S]*?\*\/\s*/, banner);
-          // '</script' may only occur in comments/strings of the source; escape
-          // it so the HTML parser can't end the inline block early
-          const inlined = '<script>' + compact
-            .replace(/<\/script/gi, '<\\/script')
-            // …and no literal openers either, so blockRe on a future re-save
-            // can never match INTO the inlined source ('\x73' is 's' in JS
-            // strings and regexes — values are preserved, only the HTML changes)
-            .replace(/<script/gi, '<\\x73cript') + '<' + '/script>';
-          out = out.replace(/<script[^>]*src=["'][^"']*reveal-autohide-toolbar[^"']*["'][^>]*>\s*<\/script>/i, () => inlined);
-        }
-        download(deckName() + (ink ? '-annotated.html' : '-copy.html'), out, 'text/html');
-      })
-      .catch(() => {
-        if (ink) exportJSON();   // file:// etc. — at least save the ink itself
-        else console.warn('autohide-toolbar: cannot fetch the deck source here (file://?) — "Save a copy" needs http(s).');
+    ]);
+  }
+  const parseDoc = (src) => new DOMParser().parseFromString(src, 'text/html');
+  const serializeDoc = (doc) => '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
+  // Replace the plugin's own <script src> with an INLINE copy of its source: a
+  // deck that loaded the plugin via a relative path would otherwise open as a
+  // blank page when the downloaded file is opened from another directory.
+  // (reveal itself should be loaded from absolute/CDN URLs to make the copy
+  // portable — relative reveal assets can't travel with a single file.)
+  function inlinePlugin(out, pluginJs) {
+    if (!pluginJs) return out;
+    // shed the long doc header (it also contains an example plugin <script src>
+    // tag, which must not survive into a self-contained copy); a one-line banner
+    // keeps the licence notice
+    const banner = '/* reveal.js-autohide-toolbar (inlined by "Save a copy") · MIT · '
+      + 'https://github.com/frankhuettner/reveal.js-autohide-toolbar */\n';
+    const compact = pluginJs.replace(/^\/\*[\s\S]*?\*\/\s*/, banner);
+    // '</script' may only occur in comments/strings of the source; escape it so
+    // the HTML parser can't end the inline block early
+    const inlined = '<script>' + compact
+      .replace(/<\/script/gi, '<\\/script')
+      .replace(/<script/gi, '<\\x73cript') + '<' + '/script>';
+    return out.replace(/<script[^>]*src=["'][^"']*reveal-autohide-toolbar[^"']*["'][^>]*>\s*<\/script>/i, () => inlined);
+  }
+  // "Save a copy": a clean deck — strip every annotation artifact (baked
+  // wrappers, board slides, and any legacy embedded JSON block).
+  // shed baked-annotation artifacts from a parsed source: flat wrappers and any
+  // legacy embedded JSON block (board sections are the callers' business)
+  function stripBaked(doc) {
+    doc.querySelectorAll('[data-aht-flat]').forEach((n) => n.remove());
+    const legacy = embeddedIn(doc);
+    if (legacy) legacy.remove();
+  }
+  // the deck's configured slide box, in reveal coordinates, with sane fallbacks —
+  // flatten bakes in these units; revive needs them only as a fallback
+  function deckSize() {
+    const c = state.Reveal.getConfig();
+    const size = state.Reveal.getComputedSlideSize ? state.Reveal.getComputedSlideSize() : null;
+    return {
+      W: (typeof c.width === 'number' && c.width) || (size && size.width) || 960,
+      H: (typeof c.height === 'number' && c.height) || (size && size.height) || 700,
+    };
+  }
+  function saveCopy(withInk) {
+    // back-compat: the old default (no arg) and saveCopy(true) saved WITH ink —
+    // both now bake; only an explicit false yields the clean copy
+    if (withInk !== false) return savePortable();
+    fetchForCopy().then(([src, pluginJs]) => {
+      const doc = parseDoc(src);
+      stripBaked(doc);
+      doc.querySelectorAll('section[data-aht-board]').forEach((n) => n.remove());
+      download(deckName() + '-copy.html', inlinePlugin(serializeDoc(doc), pluginJs), 'text/html');
+    }).catch((err) => {
+      console.warn('autohide-toolbar: "Save a copy" failed — it needs http(s) to fetch the deck source (file://?):', err);
+    });
+  }
+  // "Save portable copy": bake annotations into the slides as REGULAR content —
+  // ink as static SVG paths, text as editable HTML — so the file displays
+  // anywhere reveal runs (even without this plugin) and revives to fully
+  // editable wherever the plugin loads. The plugin is still inlined so a
+  // normally-opened copy auto-revives.
+  function savePortable() {
+    if (state.editingText) commitEditing();
+    fetchForCopy().then(([src, pluginJs]) => {
+      const doc = parseDoc(src);
+      flattenInto(doc);
+      download(deckName() + '-portable.html', inlinePlugin(serializeDoc(doc), pluginJs), 'text/html');
+    }).catch((err) => {
+      // file:// etc. — at least save the annotations themselves (and surface
+      // the reason, so a real flatten bug isn't silently masked as a fallback)
+      console.warn('autohide-toolbar: portable save fell back to JSON:', err);
+      exportJSON();
+    });
+  }
+  // Bake the live annotation model into a parsed source document (§ flatten).
+  function flattenInto(doc) {
+    const slides = doc.querySelector('.reveal .slides');
+    if (!slides) return;
+    stripBaked(doc);   // idempotent: shed any prior baked wrappers / legacy block
+    // geometry: the reveal-coordinate slide box + the centring mode, known once
+    // from the deck config (the source shares it) — see § center:true
+    const { W, H } = deckSize();
+    const center = state.Reveal.getConfig().center !== false;
+    // Key the SOURCE sections. Prefer INDEX alignment with the live deck:
+    // runtime transforms (markdown, KaTeX) rewrite a section's text in place,
+    // so content hashes of the raw source may not match the live keys — but the
+    // section ORDER does. Fall back to content-hash keys only when the leaf
+    // counts differ (e.g. slides generated from an external file).
+    // (exclude boards and — unless showHiddenSlides — hidden slides, which
+    // reveal removes from the live DOM at init but the source still contains)
+    const showHidden = state.Reveal.getConfig().showHiddenSlides;
+    const aligns = (s) => !s.hasAttribute('data-aht-board')
+      && (showHidden || s.getAttribute('data-visibility') !== 'hidden');
+    const srcLeaves = leafSectionsIn(slides).filter(aligns);
+    const liveLeaves = leafSections().filter(aligns);
+    let keyMap;
+    if (srcLeaves.length === liveLeaves.length) {
+      keyMap = new Map(srcLeaves.map((s, i) => [s, keyCache.get(liveLeaves[i]) || sectionKey(liveLeaves[i])]));
+      leafSectionsIn(slides).forEach((s) => {
+        if (s.hasAttribute('data-aht-board')) keyMap.set(s, 'b:' + s.getAttribute('data-aht-board'));
       });
+    } else {
+      keyMap = keysFor(slides);
+    }
+    // materialize board slides INTO the source so board ink bakes onto real
+    // pages, and bake their surface inline — the plugin's injected CSS doesn't
+    // travel to a plugin-less viewer (values mirror the [data-aht-surface] rules)
+    materializeBoardsIn(slides, keyMap);
+    slides.querySelectorAll('section[data-aht-board]').forEach((s) => {
+      s.style.height = '100%';
+      s.style.backgroundColor = s.getAttribute('data-aht-surface') === 'white' ? '#FFFFFF' : 'var(--aht-board-bg, #000000)';
+    });
+    keyMap.forEach((key, sec) => {
+      const strokes = state.strokes[key] || [];
+      const texts = liveTexts(key);
+      if (!strokes.length && !texts.length) return;
+      sec.appendChild(buildFlatWrapper(doc, strokes, texts, W, H, center));
+    });
+  }
+  function buildFlatWrapper(doc, strokes, texts, W, H, center) {
+    const wrap = doc.createElement('div');
+    wrap.className = 'aht-flat';
+    wrap.setAttribute('data-aht-flat', '1');
+    wrap.setAttribute('style',
+      'position:absolute; left:0; width:100%; height:' + H + 'px; '
+      + (center ? 'top:50%; transform:translateY(-50%);' : 'top:0;')
+      + ' pointer-events:none;');
+    if (strokes.length) {
+      const svg = strokesSvg(doc, strokes, W, H);
+      svg.setAttribute('data-aht-ink', '');
+      // a serialized root <svg> must carry xmlns + width/height to survive
+      // foreign sanitizers (see § slides.com)
+      svg.setAttribute('xmlns', NS);
+      svg.setAttribute('width', W); svg.setAttribute('height', H);
+      svg.setAttribute('style', 'position:absolute; inset:0; width:100%; height:100%; overflow:visible;');
+      wrap.appendChild(svg);
+    }
+    texts.forEach((t) => wrap.appendChild(textNode(doc, t, W, H)));
+    return wrap;
+  }
+
+  // ---------- revive: baked annotations → editable model ----------
+  // The inverse of flatten: on load, parse any baked wrappers back into the
+  // ratio model and strip them, so the plugin's live rendering is the single
+  // source (no double display). Keys are computed with wrappers EXCLUDED
+  // (contentBasis), so they match the deck's clean keys and localStorage.
+  function reviveFlattened() {
+    if (!slidesEl) return false;
+    if (!cfg.annotations) {
+      // present clean: baked wrappers and board slides are native content the
+      // browser would otherwise paint — actively remove them, parse nothing
+      slidesEl.querySelectorAll('[data-aht-flat]').forEach((n) => n.remove());
+      slidesEl.querySelectorAll('section[data-aht-board]').forEach((s) => s.remove());
+      return false;
+    }
+    const { W, H } = deckSize();
+    let any = false;
+    leafSections().forEach((sec) => {
+      const wraps = sec.querySelectorAll('[data-aht-flat]');
+      if (!wraps.length) return;
+      const key = keyCache.get(sec) || sectionKey(sec);
+      wraps.forEach((wrap) => {
+        // ink: the SVG's own viewBox is the authoritative W×H it was baked at,
+        // so revive is exact regardless of the current deck config
+        wrap.querySelectorAll('svg[data-aht-ink]').forEach((svg) => {
+          const vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+          const sW = (vb.length === 4 && vb[2]) || W, sH = (vb.length === 4 && vb[3]) || H;
+          svg.querySelectorAll('path, circle').forEach((node) => {
+            const st = reviveStroke(node, sW, sH);
+            if (st && st.points.length) (state.strokes[key] = state.strokes[key] || []).push(st);
+          });
+        });
+        wrap.querySelectorAll('[data-aht-text]').forEach((node) => {
+          const t = reviveText(node, W, H);
+          // trim, matching flatten's filter — foreign edits can leave whitespace
+          if (t && (t.text || '').trim()) (state.texts[key] = state.texts[key] || []).push(t);
+        });
+        any = true;
+        wrap.remove();
+      });
+    });
+    adoptBakedBoards();
+    return any;
+  }
+  // parse an SVG path's `d` — the quadratic control points ARE the original
+  // stroke points (see strokeGeom), so this recovers them exactly
+  function pathToPoints(d) {
+    const pts = [];
+    const re = /([MQL])\s*([-\d.eE,\s]*)/g;
+    let m;
+    while ((m = re.exec(d))) {
+      const nums = m[2].trim().split(/[\s,]+/).filter((s) => s !== '').map(Number);
+      if (nums.length >= 2) pts.push({ x: nums[0], y: nums[1] });   // M/L point, or Q control point
+    }
+    return pts;
+  }
+  function reviveStroke(node, W, H) {
+    const a0 = parseFloat(node.getAttribute('data-aht-a')) || (W / H);
+    const bwModel = parseFloat(node.getAttribute('data-aht-bw'));
+    const box = fitBox(W, H, a0);
+    const toR = (x, y) => ({ xr: Math.round((x - box.ox) / box.w * 1e4) / 1e4, yr: Math.round((y - box.oy) / box.h * 1e4) / 1e4 });
+    let points, color, width;
+    if (node.tagName.toLowerCase() === 'circle') {
+      points = [toR(parseFloat(node.getAttribute('cx')), parseFloat(node.getAttribute('cy')))];
+      color = node.getAttribute('fill') || cfg.defaultColor;
+      width = parseFloat(node.getAttribute('data-aht-w')) || (parseFloat(node.getAttribute('r')) * 2) || cfg.defaultWidth;
+    } else {
+      points = pathToPoints(node.getAttribute('d') || '').map((p) => toR(p.x, p.y));
+      color = node.getAttribute('stroke') || cfg.defaultColor;
+      width = parseFloat(node.getAttribute('data-aht-w')) || parseFloat(node.getAttribute('stroke-width')) || cfg.defaultWidth;
+    }
+    const st = { color: color, width: width, a: a0, points: points };
+    // no data-aht-bw: OUR nodes (data-aht-w) baked a legacy constant-px stroke —
+    // keep it legacy; FOREIGN ink is in box units, so scale it with the box
+    if (bwModel) st.bw = bwModel;
+    else if (!node.hasAttribute('data-aht-w')) st.bw = Math.round(box.w);
+    // translucent stroke → highlighter: our data-aht-hl marker, or foreign ink
+    // baked with a sub-1 stroke/fill opacity
+    const op = parseFloat(node.getAttribute('circle' === node.tagName.toLowerCase() ? 'fill-opacity' : 'stroke-opacity'));
+    if (node.hasAttribute('data-aht-hl') || (op > 0 && op < 1)) st.hl = true;
+    return st;
+  }
+  function reviveText(node, W, H) {
+    const size = parseFloat(node.getAttribute('data-aht-size'));
+    const a0 = parseFloat(node.getAttribute('data-aht-a')) || (W / H);
+    const left = parseFloat(node.style.left), top = parseFloat(node.style.top);
+    const color = toHex(node.style.color) || cfg.defaultColor;
+    // textContent (not innerText): revive parses hidden slides too, where
+    // innerText would be empty. Our baked text keeps newlines in the text node;
+    // convert any foreign-editor <br> to newlines as a best effort.
+    let text;
+    if (node.querySelector('br, div, p')) {
+      const tmp = node.cloneNode(true);
+      // Foreign contenteditable edits may encode line breaks as <br> or as
+      // <div>/<p> per line (Chromium). A <br> that is a block's ONLY child is
+      // that model's empty-line placeholder, not an extra break — drop it; then
+      // each block contributes one break before itself and unwraps in place
+      // (unwrapping keeps nested blocks attached for their own pass).
+      tmp.querySelectorAll('br').forEach((br) => {
+        const p = br.parentElement;
+        const solo = p !== tmp && p.childNodes.length === 1 && /^(DIV|P)$/.test(p.tagName);
+        br.replaceWith(solo ? '' : '\n');
+      });
+      tmp.querySelectorAll('div, p').forEach((d) => {
+        if (d.previousSibling) d.before('\n');
+        d.replaceWith.apply(d, Array.from(d.childNodes));
+      });
+      text = tmp.textContent;
+    } else {
+      text = node.textContent;
+    }
+    text = (text || '').replace(/\n$/, '');
+    const finalSize = (isFinite(size) && size > 0) ? size : ((parseFloat(node.style.fontSize) / H) || cfg.defaultTextSize);
+    // our own files carry data-aht-bold/-cond; foreign edits are read from CSS
+    const bold = node.getAttribute('data-aht-bold') === '1' || isBold(node.style.fontWeight);
+    const cond = node.getAttribute('data-aht-cond') === '1' || isCond(node.style.fontStretch);
+    return {
+      xr: Math.round((isFinite(left) ? left : 0) / 100 * 1e4) / 1e4,
+      yr: Math.round((isFinite(top) ? top : 50) / 100 * 1e4) / 1e4,
+      size: finalSize, color: color, a: a0, text: text, bold: bold, cond: cond,
+    };
+  }
+  // reconstruct the board model from baked board sections so they stay
+  // editable/removable; anchor = the preceding counted slide's key
+  function adoptBakedBoards() {
+    let lastKey = null;
+    leafSections().forEach((s) => {
+      if (s.hasAttribute('data-aht-board')) {
+        const id = s.getAttribute('data-aht-board');
+        // live surface comes from the injected CSS — shed the baked inline copy
+        // so later customization (--aht-board-bg) isn't overridden
+        s.style.removeProperty('height'); s.style.removeProperty('background-color');
+        if (!state.boards.some((b) => b.id === id)) {
+          state.boards.push({ id: id, after: lastKey, bg: s.getAttribute('data-aht-surface') === 'dark' ? 'dark' : 'white' });
+        }
+      } else {
+        lastKey = keyCache.get(s) || lastKey;
+      }
+    });
   }
 
   // ---------- keyboard ----------
   function onKey(e) {
+    // editing a text box: swallow every key from reveal (so letters type and
+    // arrows move the caret instead of navigating), Escape commits the edit —
+    // a contenteditable isn't caught by the INPUT|TEXTAREA|SELECT guard below
+    if (state.editingText) {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); commitEditing(); }
+      return;
+    }
     if ((confirmEl || exportEl) && e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation();
       closeConfirm(); closeExport();   // both null-safe; at most one is open
@@ -1068,6 +1828,7 @@ body.aht-noselect, body.aht-noselect * {
     }
     if (state.Reveal.getConfig().keyboard === false) return;   // respect the deck's keyboard setting
     if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.target && e.target.isContentEditable) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       if (state.on) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
       return;
@@ -1077,6 +1838,8 @@ body.aht-noselect, body.aht-noselect * {
     if (k === cfg.toggleKey) { e.preventDefault(); enable(!state.on); }
     else if (!state.on) return;
     else if (k === 'e') { e.preventDefault(); setTool(state.tool === 'eraser' ? 'pen' : 'eraser'); }
+    else if (k === 'h') { e.preventDefault(); setTool(state.tool === 'highlighter' ? 'pen' : 'highlighter'); }
+    else if (k === 't') { e.preventDefault(); setTool(state.tool === 'text' ? 'pen' : 'text'); }
     else if (k === 'x') { e.preventDefault(); e.shiftKey ? clearAllConfirmed() : clearSlide(); }
     else if (k === 'escape') { e.preventDefault(); e.stopPropagation(); enable(false); }
   }
@@ -1200,13 +1963,22 @@ body.aht-noselect, body.aht-noselect * {
     if (cfg.colors.indexOf(state.color) < 0)
       state.color = cfg.colors.reduce((a, c) => (luminance(a) <= luminance(c) ? a : c), cfg.colors[0] || '#000000');
     state.width = cfg.defaultWidth;
+    // resolve the default to a full preset (size + style); fall back to the
+    // middle preset if defaultTextSize matches none of them
+    const presets = Object.values(cfg.textSizes).map(asPreset);
+    const def = presets.filter((p) => p.size === cfg.defaultTextSize)[0]
+             || presets[Math.floor(presets.length / 2)] || { size: 0.04 };
+    state.size = def.size; state.bold = !!def.bold; state.cond = !!def.cond;
 
     injectCSS();
     canvas = el('canvas', { id: 'aht-canvas' });
     document.body.appendChild(canvas);
     ctx = canvas.getContext('2d');
+    textLayer = el('div', { id: 'aht-text-layer' });
+    document.body.appendChild(textLayer);
     slidesEl = reveal.getSlidesElement ? reveal.getSlidesElement() : document.querySelector('.reveal .slides');
     computeKeys();          // before load(): key migration needs them
+    reviveFlattened();      // baked annotations → editable model, wrappers stripped (localStorage still wins below)
     load((env) => {
       // async plugin deps (e.g. KaTeX off a CDN) can hold reveal's start()
       // past DOMContentLoaded — and adopting boards needs Reveal.sync().
@@ -1237,6 +2009,7 @@ body.aht-noselect, body.aht-noselect * {
     // late layout shifts (web fonts settling after 'ready') can move the slides box
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleLayout).catch(() => {});
     revealOn('slidechanged', (ev) => {
+      if (state.editingText) commitEditing();   // leaving a slide commits its open text box (keyed to the old slide)
       place(); updateSlideNo(); syncNav();
       // a board slide is for writing: entering one auto-enables the pen (and
       // leaving undoes exactly that), with pen/surface contrast kept sane
@@ -1259,7 +2032,12 @@ body.aht-noselect, body.aht-noselect * {
         cleanups.push(() => mq.removeEventListener('change', onChange));
       })();
     } catch (e) {}
-    revealOn('overviewshown', () => { state.overview = true; render(); });
+    revealOn('overviewshown', () => {
+      // commit BEFORE the text layer is hidden: readText's innerText degrades
+      // to textContent (no line breaks) on a non-rendered subtree
+      if (state.editingText) commitEditing();
+      state.overview = true; render();
+    });
     revealOn('overviewhidden', () => { state.overview = false; render(); });
 
     listen(canvas, 'pointerdown', onDown);
@@ -1269,20 +2047,30 @@ body.aht-noselect, body.aht-noselect * {
     // swallow raw touch on the canvas while annotating — kills iOS long-press
     // selection/magnifier that pointer events alone don't suppress
     listen(canvas, 'touchstart', (e) => { if (state.on) e.preventDefault(); }, { passive: false });
+    // Text tool: click empty overlay creates a box; a document-level capture
+    // listener commits an open edit when you click elsewhere
+    listen(textLayer, 'pointerdown', onTextLayerDown);
+    listen(document, 'pointerdown', onDocDownForText, true);
     listen(document, 'keydown', onKey, true);
     if (reveal.registerKeyboardShortcut) {           // feed reveal's ? help overlay
       reveal.registerKeyboardShortcut(cfg.toggleKey.toUpperCase(), 'Toggle annotation');
       reveal.registerKeyboardShortcut('E', 'Eraser (while annotating)');
-      reveal.registerKeyboardShortcut('X', 'Clear ink on slide (Shift: whole deck)');
+      reveal.registerKeyboardShortcut('H', 'Highlighter (while annotating)');
+      reveal.registerKeyboardShortcut('T', 'Text (while annotating)');
+      reveal.registerKeyboardShortcut('X', 'Clear slide annotations (Shift: whole deck)');
     }
     initChrome();
 
     // small runtime API (drive from your own buttons / the console) — the
     // destructive calls act directly; confirmation lives in the UI paths only
     window.AutohideToolbar = {
-      enable, setTool, setColor, undo, redo, clearSlide, clearAll,
+      enable, setTool, setColor, setSize, undo, redo, clearSlide, clearAll,
       addBoard, removeBoard, toggleSurface,
-      saveCopy,                 // saveCopy(false) = clean copy, no ink
+      saveCopy,                 // saveCopy(false) = clean copy, no annotations
+      savePortable, flatten: savePortable,   // bake annotations into the slides
+      // re-parse baked annotations into the model (and repaint — init's own
+      // call runs before the first place(), which paints anyway)
+      revive: () => { const r = reviveFlattened(); redraw(); renderTexts(); return r; },
       printPdf: openPrint,      // printPdf(false) = without ink
       toggle: () => enable(!state.on),
     };
@@ -1309,19 +2097,23 @@ body.aht-noselect, body.aht-noselect * {
           .then(() => setTimeout(() => window.print(), 500));
       });
     }
-    if (!cfg.annotations) return;
     slidesEl = reveal.getSlidesElement ? reveal.getSlidesElement() : document.querySelector('.reveal .slides');
     if (!slidesEl) return;
     injectCSS();   // board sections get their dark/white surface from the
                    // injected [data-aht-surface] rules — print pages need them too
     computeKeys();
+    // baked annotations: parse them into the model and strip the wrappers so the
+    // proven print path (SVG overlays anchored to .pdf-page) renders them — and
+    // there's no double ink. In clean print this actively removes them instead.
+    reviveFlattened();
+    if (!cfg.annotations) return;
     // A late-read block always lands in time: reveal defers print activation
     // (pagination + pdf-ready) to window 'load' while the document is still
     // parsing, and activation re-scans the DOM — so the late boards paginate
     // without reveal.sync(), which would only re-arm the input listeners
     // reveal's print mode deliberately removed.
     load((env) => {
-      state.strokes = env.strokes || {}; state.boards = env.boards || [];
+      state.strokes = env.strokes || {}; state.texts = env.texts || {}; state.boards = env.boards || [];
       materializeBoards();
     });
     materializeBoards();
@@ -1338,19 +2130,9 @@ body.aht-noselect, body.aht-noselect * {
       ? state.Reveal.getComputedSlideSize(window.innerWidth, window.innerHeight) : null;
     const margin = state.Reveal.getConfig().margin || 0;
     // Fragment steps are page CLONES reveal creates after init, so they're not
-    // in the key cache — re-derive their key the same way the original was
-    // keyed, so ink shows on every step's page. (Identical twin slides with
-    // fragments: clone ink lands on the first twin's key — accepted edge case.)
-    const printKey = (sec) => {
-      const cached = keyCache.get(sec);
-      if (cached) return cached;
-      if (sec.hasAttribute('data-aht-board')) return 'b:' + sec.getAttribute('data-aht-board');
-      if (sec.id) return 'id:' + sec.id;
-      if (sec.getAttribute('data-aht-id')) return 's:' + sec.getAttribute('data-aht-id');
-      const basis = (sec.textContent || '').replace(/\s+/g, ' ').trim()
-        || (sec.innerHTML || '').replace(/\s+/g, ' ').trim();
-      return 'c:' + fnv1a(basis) + ':0';
-    };
+    // in the key cache — sectionKey re-derives their key the same way the
+    // original was keyed, so ink shows on every step's page.
+    const printKey = (sec) => keyCache.get(sec) || sectionKey(sec);
     leafSections().forEach((sec) => {
       const W = (size && size.width) || sec.offsetWidth || 960;
       const H = (size && size.height) || state.Reveal.getConfig().height || 700;
@@ -1365,53 +2147,31 @@ body.aht-noselect, body.aht-noselect * {
         sec.style.left = gx + 'px'; sec.style.top = gy + 'px';
         sec.style.width = W + 'px'; sec.style.height = H + 'px';
       }
-      const list = state.strokes[printKey(sec)];
-      if (!list || !list.length) return;
+      const key = printKey(sec);
+      const list = state.strokes[key] || [];
+      const texts = liveTexts(key);
+      if (!list.length && !texts.length) return;
       const host = page || sec, ox = page ? gx : 0, oy = page ? gy : 0;
       if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'aht-print-ink');
-      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-      svg.setAttribute('style', 'position:absolute;left:' + ox + 'px;top:' + oy
-        + 'px;width:' + W + 'px;height:' + H + 'px;pointer-events:none;overflow:visible;');
-      list.forEach((st) => { if (st.points.length) svg.appendChild(printStroke(st, W, H)); });
-      host.appendChild(svg);
+      if (list.length) {
+        const svg = strokesSvg(document, list, W, H);
+        svg.setAttribute('class', 'aht-print-ink');
+        svg.setAttribute('style', 'position:absolute;left:' + ox + 'px;top:' + oy
+          + 'px;width:' + W + 'px;height:' + H + 'px;pointer-events:none;overflow:visible;');
+        host.appendChild(svg);
+      }
+      // text prints as real HTML (crisp, selectable): the same textNode the
+      // flatten path bakes, inside a slide-box-sized host so its % coordinates
+      // resolve identically to the baked output
+      if (texts.length) {
+        const box = document.createElement('div');
+        box.className = 'aht-print-text';
+        box.setAttribute('style', 'position:absolute;left:' + ox + 'px;top:' + oy
+          + 'px;width:' + W + 'px;height:' + H + 'px;pointer-events:none;');
+        texts.forEach((t) => box.appendChild(textNode(document, t, W, H)));
+        host.appendChild(box);
+      }
     });
-  }
-  // SVG twin of drawStroke: same ratio→box mapping, aspect-fit and quadratic
-  // smoothing, so the PDF matches the screen
-  function printStroke(st, W, H) {
-    const NS = 'http://www.w3.org/2000/svg';
-    const a0 = st.a, curA = W / H;
-    let bw = W, bh = H, ox = 0, oy = 0;
-    if (a0 && Math.abs(curA - a0) >= 0.002) {
-      if (curA >= a0) { bh = H; bw = bh * a0; } else { bw = W; bh = bw / a0; }
-      ox = (W - bw) / 2; oy = (H - bh) / 2;
-    }
-    const P = (pt) => [Math.round((ox + pt.xr * bw) * 100) / 100, Math.round((oy + pt.yr * bh) * 100) / 100];
-    const w = strokeWidth(st, bw);
-    const pts = st.points;
-    if (pts.length === 1) {
-      const c = document.createElementNS(NS, 'circle');
-      const p = P(pts[0]);
-      c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]);
-      c.setAttribute('r', w / 2); c.setAttribute('fill', st.color);
-      return c;
-    }
-    let d = 'M' + P(pts[0]).join(' ');
-    for (let i = 1; i < pts.length - 1; i++) {
-      const a = P(pts[i]), b = P(pts[i + 1]);
-      d += 'Q' + a.join(' ') + ' ' + ((a[0] + b[0]) / 2) + ' ' + ((a[1] + b[1]) / 2);
-    }
-    d += 'L' + P(pts[pts.length - 1]).join(' ');
-    const path = document.createElementNS(NS, 'path');
-    path.setAttribute('d', d);
-    path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', st.color);
-    path.setAttribute('stroke-width', w);
-    path.setAttribute('stroke-linecap', 'round');
-    path.setAttribute('stroke-linejoin', 'round');
-    return path;
   }
 
   // full teardown, per the official plugin API — called when the deck is destroyed
@@ -1422,11 +2182,11 @@ body.aht-noselect, body.aht-noselect * {
     closeConfirm();
     closeExport();
     if (slidesEl) slidesEl.querySelectorAll('[data-aht-board]').forEach((s) => s.remove());
-    [canvas, toolsEl, bar, document.getElementById('aht-styles')].forEach((n) => n && n.remove());
-    canvas = toolsEl = bar = launch = slideNoEl = null;
+    [canvas, textLayer, toolsEl, bar, document.getElementById('aht-styles')].forEach((n) => n && n.remove());
+    canvas = textLayer = toolsEl = bar = launch = slideNoEl = null;
     document.body.classList.remove('aht-chrome');
     document.body.classList.remove('aht-noselect');
-    state.on = false; state.overview = false; state.drawing = false; boardAuto = false;
+    state.on = false; state.overview = false; state.drawing = false; state.editingText = null; boardAuto = false;
     delete window.AutohideToolbar;
   }
 
