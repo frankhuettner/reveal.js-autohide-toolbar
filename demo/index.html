@@ -7,23 +7,92 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/theme/white.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/highlight/monokai.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" />
   <style>
-    /* optional theming — delete this block for the plugin's defaults */
-    :root { --aht-accent: #2563eb; }
-    .demo-hint { font-size: .6em; color: #666; }
-    .demo-box { background: #2563eb; color: #fff; border-radius: 12px;
-                display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+    /* ---------- sober slide master (Noto Sans, navy titles, square bullets) ----------
+       plain CSS theming layered on reveal's white theme; delete for the defaults. */
+    :root {
+      /* SKKU official palette — skku.edu/skku/about/symbol */
+      --skku-orange: #FF6C0F;             /* Pantone 1585C — creation/innovation */
+      --skku-green: #8DC63F;              /* Pantone 367C  — the signature green */
+      --skku-green-dark: #124633;         /* Pantone 3435C — communication/coop. */
+      --deck-navy: #1F3864;            /* title colour — tweak to taste */
+      --deck-font: 'Noto Sans', system-ui, -apple-system, sans-serif;
+      --deck-muted: #9aa3ad;
+      --aht-accent: var(--skku-orange);   /* toolbar / active-tool highlight */
+      --aht-font: var(--deck-font);
+    }
+    .reveal { font-family: var(--deck-font);
+      --r-main-font: var(--deck-font); --r-heading-font: var(--deck-font);
+      /* PowerPoint point sizes map 1:1 to px here (960×540 box, 1pt=1px):
+         body 20, headline 28, small 18/16, footer 12. */
+      --r-main-font-size: 20px; --r-heading-text-transform: none;
+      --r-link-color: var(--deck-navy); --r-link-color-hover: var(--deck-navy); }
+    /* top-left layout, like a consulting/B-school master.
+       reveal only sets box-sizing:border-box on sections in PRINT mode, so on
+       screen `width:100%` + horizontal padding = content-box overflow: the right
+       padding pushes text past the slide box into the letterbox. border-box fixes
+       it (print keeps reveal's own padding rules). */
+    @media screen {
+      .reveal .slides section:not(.stack) {
+        text-align: left; box-sizing: border-box; padding: 26px 44px;
+      }
+    }
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+      color: var(--deck-navy); font-weight: 700; text-transform: none;
+      text-align: left; letter-spacing: normal; line-height: 1.15; margin: 0 0 .45em; }
+    .reveal h2 { font-size: 1.4em; }   /* headline — 28 */
+    .reveal h3 { font-size: 1.2em; }   /* subhead  — 24 */
+    /* the black, bold one-line takeaway that sits under a title — body-sized, 20 */
+    .reveal .lead { font-weight: 700; color: #111; font-size: 1em; margin: 0 0 1em; }
+    .reveal p, .reveal li { color: #1a1a1a; font-weight: 400; line-height: 1.4; }
+    .reveal a { color: var(--deck-navy); }
+    .reveal strong { color: #111; }
+    /* orange highlight fragment (reveal ships red/green/blue only): text is
+       present, then recolours to the SKKU orange on its step — same mechanic
+       as reveal's highlight-red. */
+    .reveal .fragment.highlight-orange { opacity: 1; visibility: inherit; }
+    .reveal .fragment.highlight-orange.visible { color: var(--skku-orange); }
+    /* square bullets, like the reference */
+    .reveal ul { list-style: none; margin-left: 0; }
+    .reveal ul li { position: relative; padding-left: 1.15em; margin: .22em 0; }
+    .reveal ul li::before { content: '▪'; position: absolute; left: 0; color: #555; }
+    .reveal kbd { font: 600 .78em var(--deck-font); background: #eef1f5; color: #333;
+                  border: 1px solid #d3d9e0; border-radius: 4px; padding: .04em .4em; }
+    .reveal .slides button { font: 600 .8em var(--deck-font); color: var(--deck-navy);
+      background: #fff; border: 1.5px solid var(--deck-navy); border-radius: 6px;
+      padding: .3em .9em; margin-right: .4em; cursor: pointer; }
+    .reveal .slides button:hover { background: var(--deck-navy); color: #fff; }
+    .demo-hint { font-size: .8em; color: #6b7480; line-height: 1.45; }   /* 16 */
+    .demo-box { background: var(--deck-navy); color: #fff; border-radius: 10px;
+                display: flex; align-items: center; justify-content: center; margin: .3em 0; }
+    /* footer master: attribution + page number, bottom-right of the slide box.
+       Screen only — reveal's print view paginates, so a viewport-fixed footer
+       would land on just one PDF page. */
+    @media screen {
+      .deck-footer { position: fixed; z-index: 6; pointer-events: none;
+        width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16));
+        top: 50%; left: 50%; transform: translate(-50%, -50%); }
+      /* 12pt in slide space: the footer box == the slide box, so height/45 = 12
+         when the box is 540 tall, and scales 1:1 with it (reveal doesn't scale
+         this viewport-fixed layer, so we scale the type ourselves). */
+      .deck-footer span { position: absolute; right: 2.4%; bottom: 3.2%;
+        font: 400 calc(min(100vh, 100vw * 9 / 16) / 45)/1 var(--deck-font);
+        color: var(--deck-muted); white-space: nowrap; }
+    }
     /* palette slide: white/dark surface × direct/projector view */
     .palgrid { display: grid; grid-template-columns: auto 1fr 1fr;
-               gap: 8px 12px; align-items: center; width: 94%; margin: .6em auto; }
-    .palgrid .plab { font-size: .45em; color: #444; text-align: right; }
-    .palgrid .phead { font-size: .45em; color: #444; text-align: center; }
-    .palgrid .phead input { width: 90px; vertical-align: middle; }
-    .pal-pane { border-radius: 10px; padding: 9px 10px; position: relative;
-                display: flex; gap: 5px; justify-content: space-between; }
+               gap: 6px 10px; align-items: center; width: 82%; margin: .6em auto; }
+    .palgrid .plab { font-size: .65em; color: #444; text-align: right; }
+    .palgrid .phead { font-size: .65em; color: #444; text-align: center; }
+    .palgrid .phead input { width: 70px; vertical-align: middle; }
+    .pal-pane { border-radius: 8px; padding: 7px 8px; position: relative;
+                display: flex; gap: 4px; justify-content: space-between; flex-wrap: wrap; }
     .pal-pane.light { background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
     .pal-pane.dark  { background: #000; }
-    .pal-pane i { width: 21px; height: 21px; border-radius: 50%;
+    .pal-pane i { width: 17px; height: 17px; border-radius: 50%;
                   box-shadow: inset 0 0 0 1px rgba(128,128,128,.4); }
     /* projector column = same math as demo/palette.html: contrast() lifts the
        black floor, saturate() washes the gamut, ::after = room light on the wall */
@@ -62,7 +131,7 @@
 
     <section>
       <h2>reveal.js-autohide-toolbar</h2>
-      <p>A presenter toolkit for <a href="https://revealjs.com">reveal.js</a> —
+      <p class="lead">A presenter toolkit for <a href="https://revealjs.com">reveal.js</a> —
       and a tiny tour of what reveal itself can do.</p>
       <p class="demo-hint">Move the mouse to the <strong>bottom-left corner</strong> — the toolbar appears.<br/>
       Navigate with <kbd>→</kbd> / <kbd>←</kbd>, or just tap the right/left half on touch.</p>
@@ -71,7 +140,7 @@
 
     <section>
       <h2>Draw on any slide</h2>
-      <p>Press <kbd>A</kbd> (or the ✏️ button) and write right here.</p>
+      <p class="lead">Press <kbd>A</kbd> (or the pen button) and write right here.</p>
       <p class="demo-hint"><kbd>E</kbd> eraser (per stroke!) · <kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.<br/>
       Pick colours and pen widths in the bar; drag it by its grip, minimize it,
       park it anywhere. Ink survives reloads — and even editing the deck later.</p>
@@ -102,7 +171,7 @@
 
     <section>
       <h2>Format-change test</h2>
-      <p>Draw a circle, then switch the deck format:</p>
+      <p class="lead">Draw a circle, then switch the deck format:</p>
       <p>
         <button onclick="Reveal.configure({ width: 960, height: 540 })">16:9</button>
         <button onclick="Reveal.configure({ width: 960, height: 720 })">4:3</button>
@@ -115,7 +184,7 @@
     <section>
       <section>
         <h2>Vertical slides</h2>
-        <p>reveal can nest slides — press <kbd>↓</kbd>.</p>
+        <p class="lead">reveal can nest slides — press <kbd>↓</kbd>.</p>
         <p class="demo-hint">Great for optional detail: the audience path goes
         left-to-right, the deep-dives hide below.</p>
       </section>
@@ -128,10 +197,10 @@
 
     <section>
       <h2>Fragments</h2>
-      <p>Reveal content step by step:</p>
+      <p class="lead">Reveal content step by step:</p>
       <ul>
         <li class="fragment">appear…</li>
-        <li class="fragment highlight-red">highlight…</li>
+        <li class="fragment highlight-orange">highlight…</li>
         <li class="fragment grow">grow…</li>
         <li class="fragment fade-up">or slide in.</li>
       </ul>
@@ -145,7 +214,7 @@
     </section>
     <section data-auto-animate>
       <h2>Auto-Animate</h2>
-      <div class="demo-box" data-id="box" style="width: 320px; height: 120px; background: #059669;">…morph by itself</div>
+      <div class="demo-box" data-id="box" style="width: 320px; height: 120px; background: #8DC63F; color: #124633;">…morph by itself</div>
       <p class="demo-hint">Matching <code>data-id</code> elements animate between slides — no code.</p>
     </section>
 
@@ -164,7 +233,7 @@
 
     <section>
       <h2>Math</h2>
-      <p>LaTeX typesetting via the math plugin (KaTeX or MathJax):</p>
+      <p class="lead">LaTeX typesetting via the math plugin (KaTeX or MathJax):</p>
       <p>\[ e^{i\pi} + 1 = 0 \qquad\qquad \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi} \]</p>
       <p class="demo-hint">Write LaTeX right in your HTML — inline math like
       \( a^2 + b^2 = c^2 \) works too. (And yes, you can draw on formulas.)</p>
@@ -183,9 +252,9 @@
       <p class="demo-hint">Arrow keys step through the highlighted lines.</p>
     </section>
 
-    <section data-background-gradient="linear-gradient(to bottom, #1e3a8a, #0ea5e9)">
+    <section data-background-gradient="linear-gradient(to bottom, #124633, #8DC63F)">
       <h2 style="color:#fff">Backgrounds</h2>
-      <p style="color:#e0f2fe">Any slide can have a colour, gradient, image,
+      <p style="color:#eaf3e0">Any slide can have a colour, gradient, image,
       video or iframe background — this one is a CSS gradient.</p>
     </section>
 
@@ -206,13 +275,14 @@
 
     <section>
       <h2>That's the tour</h2>
-      <p>One file, no dependencies:</p>
+      <p class="lead">One file, no dependencies:</p>
       <p><a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a></p>
       <p class="demo-hint">reveal.js basics: <a href="https://revealjs.com">revealjs.com</a> ·
       this deck is the plugin's test subject — it runs in CI on Chromium & WebKit × reveal 5 & 6.</p>
     </section>
 
   </div>
+  <div class="deck-footer" aria-hidden="true"><span id="deck-foot"></span></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.js"></script>
@@ -226,6 +296,7 @@
     width: 960,               // 16:9 — PowerPoint's slide box in points (1pt = 1px)
     height: 540,
     margin: 0,                // edge-to-edge like PPT & co. (reveal default: 0.04)
+    center: false,            // top-align content, like a slide master
     maxScale: 4,              // let big displays use their pixels (reveal default caps at 2)
     hash: true,
     controls: false,          // the plugin's toolbar replaces the arrows + slide number
@@ -254,6 +325,20 @@
       pane.style.setProperty('--roomlight', e.target.value / 100);
     });
   });
+
+  // footer master: author + page number, bottom-right. Leaf slides are counted;
+  // plugin-inserted board slides hold the number (they're uncounted).
+  const footEl = document.getElementById('deck-foot');
+  const updateFooter = () => {
+    const cur = Reveal.getCurrentSlide();
+    if (!cur || cur.hasAttribute('data-aht-board')) return;
+    const leaves = Array.from(document.querySelectorAll('.reveal .slides section'))
+      .filter((s) => !s.querySelector('section') && !s.hasAttribute('data-aht-board'));
+    const i = leaves.indexOf(cur);
+    footEl.textContent = 'Frank Huettner | ' + ((i < 0 ? 0 : i) + 1);
+  };
+  Reveal.on('ready', updateFooter);
+  Reveal.on('slidechanged', updateFooter);
 </script>
 </body>
 </html>
