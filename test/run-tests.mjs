@@ -951,7 +951,7 @@ async function runSuite(browserType, label) {
       assert(/<path[^>]+data-aht-a/i.test(html) || /<circle[^>]+data-aht-a/i.test(html), 'baked ink path/circle missing');
       assert(/viewBox=/.test(html) && /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(html), 'baked SVG missing root attrs');
       assert(!/<script[^>]+data-aht-annotations/i.test(html), 'portable copy should not carry a JSON annotations block');
-      assert(html.includes('Format-change test'), 'deck source content missing from the copy');
+      assert(html.includes('fresh, familiar toolbar'), 'deck source content missing from the copy');
       assert(!html.includes('id="aht-toolbar"'), 'live plugin DOM leaked into the copy');
       // self-contained: the plugin source is inlined, no relative script left
       assert(html.includes('window.RevealAutohideToolbar'), 'plugin source not inlined into the copy');

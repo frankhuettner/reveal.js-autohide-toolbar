@@ -33,8 +33,8 @@
       --r-main-font: var(--deck-font); --r-heading-font: var(--deck-font);
       /* PowerPoint point sizes map 1:1 to px here (960×540 box, 1pt=1px):
          body 20, headline 28, small 18/16, footer 12. */
-      --r-main-font-size: 20px; --r-heading-text-transform: none;
-      --r-link-color: var(--deck-navy); --r-link-color-hover: var(--deck-navy); }
+      --r-main-font-size: 20px; --r-heading-text-transform: none; }
+    /* links keep reveal's own theme style (the white theme's blue + hover) */
     /* top-left layout, like a consulting/B-school master.
        reveal only sets box-sizing:border-box on sections in PRINT mode, so on
        screen `width:100%` + horizontal padding = content-box overflow: the right
@@ -50,20 +50,27 @@
       text-align: left; letter-spacing: normal; line-height: 1.15; margin: 0 0 .45em; }
     .reveal h2 { font-size: 1.4em; }   /* headline — 28 */
     .reveal h3 { font-size: 1.2em; }   /* subhead  — 24 */
+    /* the big line: black, bold, oversized — for one-idea slides */
+    .reveal .mega { font-weight: 800; color: #111; font-size: 1.9em;
+      line-height: 1.1; letter-spacing: -.01em; margin: 0 0 .4em; }
+    .reveal .mega .accent { color: var(--skku-orange); }
     /* the black, bold one-line takeaway that sits under a title — body-sized, 20 */
     .reveal .lead { font-weight: 700; color: #111; font-size: 1em; margin: 0 0 1em; }
     .reveal p, .reveal li { color: #1a1a1a; font-weight: 400; line-height: 1.4; }
-    .reveal a { color: var(--deck-navy); }
     .reveal strong { color: #111; }
     /* orange highlight fragment (reveal ships red/green/blue only): text is
        present, then recolours to the SKKU orange on its step — same mechanic
        as reveal's highlight-red. */
     .reveal .fragment.highlight-orange { opacity: 1; visibility: inherit; }
-    .reveal .fragment.highlight-orange.visible { color: var(--skku-orange); }
+    .reveal .fragment.highlight-orange.visible { color: var(--skku-orange); font-weight: 700; }
     /* square bullets, like the reference */
     .reveal ul { list-style: none; margin-left: 0; }
     .reveal ul li { position: relative; padding-left: 1.15em; margin: .22em 0; }
     .reveal ul li::before { content: '▪'; position: absolute; left: 0; color: #555; }
+    /* the "why code" list: green check markers instead of square bullets */
+    .reveal ul.win li::before { content: '✓'; color: var(--skku-green-dark); font-weight: 700; }
+    /* inline lucide glyphs, sized to the surrounding text (real toolbar icons) */
+    .reveal .ico { height: .95em; width: .95em; vertical-align: -.14em; }
     .reveal kbd { font: 600 .78em var(--deck-font); background: #eef1f5; color: #333;
                   border: 1px solid #d3d9e0; border-radius: 4px; padding: .04em .4em; }
     .reveal .slides button { font: 600 .8em var(--deck-font); color: var(--deck-navy);
@@ -71,11 +78,13 @@
       padding: .3em .9em; margin-right: .4em; cursor: pointer; }
     .reveal .slides button:hover { background: var(--deck-navy); color: #fff; }
     .demo-hint { font-size: .8em; color: #6b7480; line-height: 1.45; }   /* 16 */
-    .demo-box { background: var(--deck-navy); color: #fff; border-radius: 10px;
-                display: flex; align-items: center; justify-content: center; margin: .3em 0; }
-    /* footer master: attribution + page number, bottom-right of the slide box.
-       Screen only — reveal's print view paginates, so a viewport-fixed footer
-       would land on just one PDF page. */
+    .demo-try { color: var(--skku-orange); font-weight: 700; }
+    .reveal pre { box-shadow: none; width: 100%; font-size: .62em; }
+    .reveal pre code { border-radius: 8px; padding: 14px 16px; }
+    .reveal .math-display { font-size: 1.15em; margin: .3em 0; }
+    /* footer master: date bottom-left, attribution + page number bottom-right
+       of the slide box. Screen only — reveal's print view paginates, so a
+       viewport-fixed footer would land on just one PDF page. */
     @media screen {
       .deck-footer { position: fixed; z-index: 6; pointer-events: none;
         width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16));
@@ -83,27 +92,14 @@
       /* 12pt in slide space: the footer box == the slide box, so height/45 = 12
          when the box is 540 tall, and scales 1:1 with it (reveal doesn't scale
          this viewport-fixed layer, so we scale the type ourselves). */
-      .deck-footer span { position: absolute; right: 2.4%; bottom: 3.2%;
+      .deck-footer #deck-foot { position: absolute; right: 2.4%; bottom: 3.2%;
+        font: 400 calc(min(100vh, 100vw * 9 / 16) / 45)/1 var(--deck-font);
+        color: var(--deck-muted); white-space: nowrap; }
+      /* date: bottom-left, mirroring the attribution on the right */
+      .deck-footer .deck-date { position: absolute; left: 2.4%; bottom: 3.2%;
         font: 400 calc(min(100vh, 100vw * 9 / 16) / 45)/1 var(--deck-font);
         color: var(--deck-muted); white-space: nowrap; }
     }
-    /* palette slide: white/dark surface × direct/projector view */
-    .palgrid { display: grid; grid-template-columns: auto 1fr 1fr;
-               gap: 6px 10px; align-items: center; width: 82%; margin: .6em auto; }
-    .palgrid .plab { font-size: .65em; color: #444; text-align: right; }
-    .palgrid .phead { font-size: .65em; color: #444; text-align: center; }
-    .palgrid .phead input { width: 70px; vertical-align: middle; }
-    .pal-pane { border-radius: 8px; padding: 7px 8px; position: relative;
-                display: flex; gap: 4px; justify-content: space-between; flex-wrap: wrap; }
-    .pal-pane.light { background: #fff; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
-    .pal-pane.dark  { background: #000; }
-    .pal-pane i { width: 17px; height: 17px; border-radius: 50%;
-                  box-shadow: inset 0 0 0 1px rgba(128,128,128,.4); }
-    /* projector column = same math as demo/palette.html: contrast() lifts the
-       black floor, saturate() washes the gamut, ::after = room light on the wall */
-    .pal-pane.projector { filter: contrast(.75) saturate(.65) brightness(1.05); }
-    .pal-pane.projector::after { content: ''; position: absolute; inset: 0; border-radius: 10px;
-                              background: #fff; opacity: var(--roomlight, .4); pointer-events: none; }
 
     /* PPT-style letterbox (pure CSS theming, not the plugin): black bars,
        white slide box. reveal itself never shows a letterbox — it paints the
@@ -134,160 +130,240 @@
 <div class="reveal">
   <div class="slides">
 
+    <!-- 1 · the hook -->
     <section>
-      <h2>reveal.js-autohide-toolbar</h2>
-      <p class="lead">A presenter toolkit for <a href="https://revealjs.com">reveal.js</a> —
-      and a tiny tour of what reveal itself can do.</p>
-      <p class="demo-hint">Move the mouse to the <strong>bottom-left corner</strong> — the toolbar appears.<br/>
-      Navigate with <kbd>→</kbd> / <kbd>←</kbd>, or just tap the right/left half on touch.</p>
-      <aside class="notes">Welcome! Press S for this speaker view — it stays in sync with the audience window, ink included.</aside>
+      <p class="mega">Slides an LLM can <span class="accent">write.</span></p>
+      <p class="lead">A reveal.js deck is just HTML — and this plugin lets you draw on it live.</p>
+      <p class="demo-hint">This whole demo is one HTML file.
+      <span class="demo-try">Press <kbd>A</kbd> and scribble across this slide</span> — the
+      toolbar waits in the bottom-left corner. Move between slides with <kbd>→</kbd> / <kbd>←</kbd>.</p>
+      <aside class="notes">Press S for this speaker view — it stays in sync with the audience window, ink included.</aside>
     </section>
 
+    <!-- 2 · why author a deck as code -->
     <section>
-      <h2>Draw on any slide</h2>
-      <p class="lead">Press <kbd>A</kbd> (or the pen button) and write right here.</p>
-      <p class="demo-hint"><kbd>E</kbd> eraser (per stroke!) · <kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>X</kbd> clear · <kbd>Esc</kbd> exit.<br/>
-      Pick colours and pen widths in the bar; drag it by its grip, minimize it,
-      park it anywhere. Ink survives reloads — and even editing the deck later.</p>
-      <aside class="notes">Strokes are stored as ratios and keyed to slide content, so they survive resize, reload, and deck edits.</aside>
+      <h2>Built by the model, owned by you</h2>
+      <p class="lead">A reveal.js deck is just HTML.</p>
+      <ul class="win">
+        <li>An LLM can write and revise the whole deck from a prompt — text is its home turf.</li>
+        <li>The deck opens in any browser and looks the same everywhere, fonts and all.</li>
+        <li>It's your file: nothing to buy, nothing to lock you in.</li>
+      </ul>
+      <p class="demo-hint">A polished deck is now a prompt away — and it stays entirely yours.
+      That's a genuinely nice place to be.</p>
+      <aside class="notes">The point isn't "PPT is bad" — it's that a text deck is something a model can generate and restructure with ease.</aside>
     </section>
 
+    <!-- 3 · the toolbar -->
     <section>
-      <h2>The ink palette</h2>
-      <p class="demo-hint">Three neutrals + five hues, each as an <strong>ink</strong> (dark
-      Tailwind&nbsp;700 — for white slides) / <strong>chalk</strong> (light Tailwind&nbsp;300 —
-      for dark boards) pair.</p>
-      <div class="palgrid">
-        <span></span>
-        <span class="phead">direct view</span>
-        <span class="phead">projector* · room light <input type="range" id="pal-light" min="0" max="40" value="40"></span>
-        <span class="plab">white&nbsp;slide</span>
-        <div class="pal-pane light"></div>
-        <div class="pal-pane light projector"></div>
-        <span class="plab">dark&nbsp;board</span>
-        <div class="pal-pane dark"></div>
-        <div class="pal-pane dark projector"></div>
-      </div>
-      <p class="demo-hint">*simulated: limited contrast, washed-out colours, room light
-      falling on the wall. Even “black” only reaches mid-gray there — the chalk shades
-      are what still read on a projected dark board.</p>
-      <aside class="notes">The palette was picked against this projector simulation: ink shades keep contrast on white, chalk shades keep contrast on a projector-washed board.</aside>
+      <h2>Fresh, yet familiar</h2>
+      <p class="lead">A presenter toolbar that hides until you reach for it.</p>
+      <p class="demo-hint">Pen, highlighter, text, boards, navigation, and export — laid out
+      the way you'd expect, then out of the way so the slide gets the whole screen. Drawing
+      on a reveal deck isn't new; making it feel this obvious is the point. One file, no
+      separate CSS to include.</p>
+      <aside class="notes">Annotation on reveal has existed for years (chalkboard, Slidev's drawing mode). The contribution here is the feel: one auto-hiding toolbar, per-stroke eraser, correct cursor mapping, ink that survives edits and exports clean.</aside>
     </section>
 
+    <!-- 4 · CENTERPIECE — draw -->
     <section>
-      <h2>Format-change test</h2>
+      <h2>Draw on it live</h2>
+      <p class="lead">Press <kbd>A</kbd>, or the pen button
+      <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>,
+      and write right here.</p>
+      <p class="demo-try">Try it now — scrawl a note, circle a word, underline this line.</p>
+      <p class="demo-hint">Colours and three pen widths in the bar ·
+      <kbd>E</kbd> eraser (per stroke, not clear-all) · <kbd>Ctrl+Z</kbd> undo ·
+      <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>X</kbd> clear this slide · <kbd>Esc</kbd> exit.<br/>
+      Ink lands exactly under the cursor at any window size or zoom — and it
+      <strong>survives reloads, and even editing the deck later.</strong></p>
+      <aside class="notes">Strokes are stored as ratios keyed to slide content, so they survive resize, reload, and deck edits.</aside>
+    </section>
+
+    <!-- 5 · highlighter -->
+    <section>
+      <h2>Highlight what matters</h2>
+      <p class="lead">Press <kbd>H</kbd> for the highlighter
+      <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>.</p>
+      <p class="demo-try">Swipe it across <strong>this whole sentence</strong> and watch it glow.</p>
+      <p class="demo-hint">A broad, translucent marker that lays down <em>under</em> your pen
+      ink — so your circles and arrows still read on top. It shares the pen's colour
+      palette; pick the amber swatch for the classic look.</p>
+      <aside class="notes">The highlighter draws behind the pen layer and round-trips through export like any other ink.</aside>
+    </section>
+
+    <!-- 6 · text tool -->
+    <section>
+      <h2>Type, don't just scribble</h2>
+      <p class="lead">Press <kbd>T</kbd>
+      <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/></svg>,
+      click, and type.</p>
+      <p class="demo-try">Drop a label on this slide — your name, a date, a caption.</p>
+      <p class="demo-hint">That's the whole interaction: click, type, done. Because it stays
+      real text, on export it simply <strong>merges into the slide's HTML</strong> —
+      selectable in the PDF, editable anywhere, never a flattened image. Drag to move, click
+      to re-edit.</p>
+      <aside class="notes">Text is kept as HTML, so a saved copy or the PDF carries it as real, selectable text.</aside>
+    </section>
+
+    <!-- 7 · boards -->
+    <section>
+      <h2>A whiteboard, mid-sentence</h2>
+      <p class="lead">The board button
+      <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M12 8v6"/><path d="M9 11h6"/></svg>
+      drops a blank board into the deck — without leaving your talk.</p>
+      <p class="demo-hint">Whiteboard or blackboard (the pen colour swaps to stay visible),
+      in the deck's own slide format. It's a <strong>real slide</strong>: it shows in the
+      overview, the speaker view, and the PDF export — and it's uncounted, so your
+      audience-visible slide numbers don't shift.</p>
+      <aside class="notes">Great for an unplanned derivation or a question you didn't prepare for.</aside>
+    </section>
+
+    <!-- 8 · ink is real geometry (KEEP: buttons for the tap-ignore + button-slide test) -->
+    <section>
+      <h2>Your ink is real geometry</h2>
       <p class="lead">Draw a circle, then switch the deck format:</p>
       <p>
         <button onclick="Reveal.configure({ width: 960, height: 540 })">16:9</button>
         <button onclick="Reveal.configure({ width: 960, height: 720 })">4:3</button>
       </p>
-      <p class="demo-hint">The circle stays a circle — strokes remember their aspect
-      ratio and are aspect-fit, not stretched. (Buttons also demo that taps on
-      interactive elements never trigger slide navigation.)</p>
+      <p class="demo-hint">The circle stays a circle — strokes remember their aspect ratio
+      and are aspect-fit, not stretched. Ink is stored relative to the slide box, not as
+      pixels, which is why it survives resize, reload, and deck edits. (The buttons also
+      show that taps on interactive elements never trigger slide navigation.)</p>
+      <aside class="notes">This is the test that separates a real annotation model from a screenshot-over-the-slide hack.</aside>
     </section>
 
+    <!-- 9 · save / ship / print -->
     <section>
-      <section>
-        <h2>Vertical slides</h2>
-        <p class="lead">reveal can nest slides — press <kbd>↓</kbd>.</p>
-        <p class="demo-hint">Great for optional detail: the audience path goes
-        left-to-right, the deep-dives hide below.</p>
-      </section>
-      <section>
-        <h3>Down here!</h3>
-        <p>Ink works on vertical slides too — every slide keeps its own drawings.</p>
-        <aside class="notes">Each leaf slide has its own ink store.</aside>
-      </section>
-    </section>
-
-    <section>
-      <h2>Fragments</h2>
-      <p class="lead">Reveal content step by step:</p>
+      <h2>Save it. Ship it. Print it.</h2>
       <ul>
-        <li class="fragment">appear…</li>
-        <li class="fragment highlight-orange">highlight…</li>
-        <li class="fragment grow">grow…</li>
-        <li class="fragment fade-up">or slide in.</li>
+        <li><strong>Portable copy</strong> — one self-contained HTML file with your ink
+          baked in as SVG and your text as real HTML. Opens anywhere, even without the
+          plugin — and re-absorbs into the editable model wherever the plugin loads.</li>
+        <li><strong>Clean copy</strong> — the shareable deck, annotations stripped.</li>
+        <li><strong>PDF export</strong> — one click; ink as crisp vector overlays, text as
+          selectable HTML, boards as real pages. Or export clean.</li>
       </ul>
-      <p class="demo-hint">Each step is one arrow press — and each gets its own page in the PDF export.</p>
+      <p class="demo-hint">All from the download / print button
+      <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
+      in the toolbar. Live ink lives in localStorage per deck; nothing leaves your machine
+      unless you export it.</p>
+      <aside class="notes">The portable copy is the handoff format — email it, archive it, or open it years later.</aside>
     </section>
 
-    <section data-auto-animate>
-      <h2>Auto-Animate</h2>
-      <div class="demo-box" data-id="box" style="width: 90px; height: 90px;">1</div>
-      <p class="demo-hint">Press <kbd>→</kbd> and watch the box…</p>
-    </section>
-    <section data-auto-animate>
-      <h2>Auto-Animate</h2>
-      <div class="demo-box" data-id="box" style="width: 320px; height: 120px; background: #8DC63F; color: #124633;">…morph by itself</div>
-      <p class="demo-hint">Matching <code>data-id</code> elements animate between slides — no code.</p>
-    </section>
-
-    <section data-markdown>
-      <script type="text/template">
-        ## Write slides in Markdown
-
-        Just mark a section with `data-markdown`:
-
-        - *emphasis*, **bold**, `code`
-        - lists, [links](https://revealjs.com/markdown/), images, tables
-
-        Authoring stays in your editor — reveal renders it.
-      </script>
-    </section>
-
+    <!-- 10 · the visual editors — agnostic -->
     <section>
-      <h2>Math</h2>
-      <p class="lead">LaTeX typesetting via the math plugin (KaTeX or MathJax):</p>
-      <p>\[ e^{i\pi} + 1 = 0 \qquad\qquad \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi} \]</p>
-      <p class="demo-hint">Write LaTeX right in your HTML — inline math like
-      \( a^2 + b^2 = c^2 \) works too. (And yes, you can draw on formulas.)</p>
-      <aside class="notes">The math plugin ships with reveal — one script tag, one plugin entry.</aside>
+      <h2>What about the slide editors?</h2>
+      <p class="demo-hint" style="margin-bottom:.6em">Some build web decks by hand —
+        <a href="https://slides.com">slides.com</a> (from reveal's own author),
+        <a href="https://github.com/jbirky/parallax-presentations">parallax-presentations</a>,
+        <a href="https://github.com/lucademenego99/icp-editor">icp-editor</a>. And the classics —
+        PowerPoint, Keynote, Google Slides — aren't going anywhere. Point-and-drag is a
+        genuinely nice way to work.</p>
+      <p class="lead">Both ways have their place.</p>
+      <p class="demo-hint">Reach for a visual editor when you want to arrange slides by hand;
+      reach for code when you'd rather let a model build it. Either way, you can draw on your
+      slides live — here, from one small toolbar that stays out of the way.</p>
+      <aside class="notes">Positioning, not a takedown: pick whichever fits the moment.</aside>
     </section>
 
+    <!-- 11 · math, first-class -->
     <section>
-      <h2>Code with highlighting</h2>
-      <pre><code class="language-js" data-trim data-line-numbers="1|3-4">
+      <h2>Real LaTeX, first-class</h2>
+      <p class="lead">Write mathematics the way you already write it:</p>
+      <p class="math-display">\[ e^{i\pi} + 1 = 0 \qquad \int_{-\infty}^{\infty} e^{-x^2}\,dx = \sqrt{\pi} \]</p>
+      <p class="math-display">\[ \nabla \times \mathbf{B} = \mu_0\mathbf{J} + \mu_0\varepsilon_0\frac{\partial \mathbf{E}}{\partial t}
+        \qquad \binom{n}{k} = \frac{n!}{k!\,(n-k)!} \]</p>
+      <p class="demo-hint">LaTeX renders through the math plugin (KaTeX or MathJax) — inline
+      like \( a^2 + b^2 = c^2 \) or displayed. It's typeset, selectable, and sharp at any
+      zoom. And yes — you can draw straight on a formula.</p>
+      <aside class="notes">One script tag and one plugin entry; the math plugin ships with reveal.</aside>
+    </section>
+
+    <!-- 12 · fragments (horizontal — kept fragment-free of the stack below, so the
+             down arrow descends on the first press instead of stepping fragments) -->
+    <section>
+      <h2>It's a full reveal.js deck</h2>
+      <p class="lead">Everything reveal does, untouched.</p>
+      <ul>
+        <li class="fragment" data-fragment-index="2">Points reveal one press at a time…</li>
+        <li class="fragment" data-fragment-index="1">…in any order you set — this line jumped ahead.</li>
+        <li class="fragment fade-in-then-out" data-fragment-index="3">…and a line can appear, then quietly bow out.</li>
+        <li class="fragment" data-fragment-index="4">Markdown, code highlighting, auto-animate, backgrounds — all
+          <span class="fragment highlight-orange" data-fragment-index="5">included</span>.</li>
+      </ul>
+      <p class="demo-hint">Set <code>data-fragment-index</code> to reveal in any order;
+      <code>fade-in-then-out</code> makes a fragment vanish again. Each step is one arrow
+      press and gets its own PDF page.</p>
+      <aside class="notes">Nothing on this slide is custom — it's stock reveal.js features.</aside>
+    </section>
+
+    <!-- 13 · vertical stack (VERTICAL STACK: keep for the stack test. The top slide
+             stays fragment-free so pressing the down arrow descends immediately —
+             reveal's directional nav steps fragments before it changes slides.) -->
+    <section>
+      <section>
+        <h2>…including vertical stacks</h2>
+        <p class="lead">Tuck optional detail below a slide, instead of after it.</p>
+        <p class="demo-hint">Press <kbd>↓</kbd> to drop into the stack — the toolbar's
+        up/down arrows appear only when a slide has somewhere vertical to go.</p>
+        <aside class="notes">The up/down cluster is added by the plugin and hides itself on slides with no vertical route.</aside>
+      </section>
+      <section>
+        <h3>You're in a vertical stack</h3>
+        <p>Nested slides let you tuck away optional detail. Honestly, they can also confuse an
+        audience about where they are in the talk.</p>
+        <p class="lead">If that trips you up, just don't use them.</p>
+        <p class="demo-hint">Plenty of great decks are a single straight line of slides — mine
+        usually are. But if you do nest, every leaf keeps its own ink. Press <kbd>↑</kbd> to
+        go back up.</p>
+        <aside class="notes">Being candid here: vertical stacks are a reveal feature, not a recommendation. Use them only if they genuinely help.</aside>
+      </section>
+    </section>
+
+    <!-- 14 · references -->
+    <section>
+      <h2>References</h2>
+      <ul>
+        <li><strong>This plugin</strong> —
+          <a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a> · MIT</li>
+        <li><strong>reveal.js</strong> — <a href="https://revealjs.com">revealjs.com</a></li>
+        <li><strong>Visual slide editors</strong> —
+          <a href="https://slides.com">slides.com</a> ·
+          <a href="https://github.com/jbirky/parallax-presentations">parallax-presentations</a> ·
+          <a href="https://github.com/lucademenego99/icp-editor">icp-editor</a></li>
+        <li><strong>Pretendard</strong> — the typeface used here —
+          <a href="https://github.com/orioncactus/pretendard">github.com/orioncactus/pretendard</a></li>
+        <li><strong>KaTeX</strong> (math) — <a href="https://katex.org">katex.org</a> ·
+          <strong>Lucide</strong> (toolbar icons) — <a href="https://lucide.dev">lucide.dev</a></li>
+      </ul>
+      <p class="demo-hint">Everything this demo is built with — plus the visual editors worth
+      knowing if you'd rather place slides by hand.</p>
+      <aside class="notes">Credits and pointers: the plugin, reveal itself, the alternatives, and the fonts/libraries in play.</aside>
+    </section>
+
+    <!-- 15 · close -->
+    <section>
+      <h2>A fresh, familiar toolbar for reveal.js</h2>
+      <p class="lead">One dependency-free file — add it in one line:</p>
+      <pre><code class="language-js" data-trim data-line-numbers>
         Reveal.initialize({
-          hash: true,
-          // walk through code line by line:
-          plugins: [ RevealHighlight, RevealAutohideToolbar ],
+          controls: false, slideNumber: false,   // the toolbar replaces them
+          plugins: [ RevealAutohideToolbar ],
         });
       </code></pre>
-      <p class="demo-hint">Arrow keys step through the highlighted lines.</p>
-    </section>
-
-    <section data-background-gradient="linear-gradient(to bottom, #124633, #8DC63F)">
-      <h2 style="color:#fff">Backgrounds</h2>
-      <p style="color:#eaf3e0">Any slide can have a colour, gradient, image,
-      video or iframe background — this one is a CSS gradient.</p>
-    </section>
-
-    <section>
-      <h2>Presenter tools</h2>
-      <ul style="font-size:.75em">
-        <li><strong>Board slides</strong> — the ▦+ button inserts a whiteboard
-          (or blackboard) in the deck's slide format, uncounted.</li>
-        <li><strong>Speaker view</strong> (<kbd>S</kbd>) — notes, timer, next slide; ink syncs live.</li>
-        <li><strong>Overview</strong> (<kbd>O</kbd>) · <strong>Fullscreen</strong> (<kbd>F</kbd>) · slide counter.</li>
-        <li><strong>Download / print menu</strong> (the printer/download button) —
-          save a self-contained HTML copy (clean or with your ink baked in),
-          or export a <strong>PDF</strong>, with ink as crisp vectors or without:
-          one click opens the print dialog for you.</li>
-      </ul>
-      <aside class="notes">The whole toolkit is one dependency-free file.</aside>
-    </section>
-
-    <section>
-      <h2>That's the tour</h2>
-      <p class="lead">One file, no dependencies:</p>
-      <p><a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a></p>
-      <p class="demo-hint">reveal.js basics: <a href="https://revealjs.com">revealjs.com</a> ·
-      this deck is the plugin's test subject — it runs in CI on Chromium & WebKit × reveal 5 & 6.</p>
+      <p class="demo-hint"><a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a>
+      · MIT · links on the previous slide.<br/>
+      This deck is the plugin's own test subject — it runs in CI on Chromium &amp; WebKit × reveal 5 &amp; 6.</p>
+      <aside class="notes">The whole toolkit is one file, no build step, no separate CSS.</aside>
     </section>
 
   </div>
-  <div class="deck-footer" aria-hidden="true"><span id="deck-foot"></span></div>
+  <div class="deck-footer" aria-hidden="true">
+    <span class="deck-date">August 2026</span>
+    <span id="deck-foot"></span>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.js"></script>
@@ -309,26 +385,6 @@
     scrollActivationWidth: 0, // stay in slide mode on phones (keeps toolbar + ink)
     plugins: [ RevealMarkdown, RevealHighlight, RevealMath.KaTeX, RevealNotes, RevealAutohideToolbar ],
     // autohideToolbar: { ... }        // all options are optional — see the README
-  });
-
-  // "The ink palette" slide: fill the four panes from the plugin's own swatch
-  // buttons (so this slide can never go stale against the real palette) and
-  // let the slider set how much room light washes the projector column.
-  Reveal.on('ready', () => {
-    // live view: read the palette straight from the plugin's own swatches. In
-    // ?print-pdf / ?view=scroll the plugin builds no UI — fall back to a copy
-    // of its DEFAULTS.colors (keep in sync with reveal-autohide-toolbar.js).
-    let palColors = Array.from(document.querySelectorAll('#aht-bar .aht-swatch'), (b) => b.dataset.color);
-    if (!palColors.length) palColors = ['#FFFFFF', '#8E8E93', '#000000', '#B91C1C', '#FCA5A5', '#B45309',
-                                        '#FCD34D', '#15803D', '#86EFAC', '#1D4ED8', '#93C5FD', '#7E22CE', '#D8B4FE'];
-    document.querySelectorAll('.pal-pane').forEach((pane) => {
-      pane.innerHTML = palColors.map((c) => `<i style="background:${c}"></i>`).join('');
-    });
-  });
-  document.getElementById('pal-light').addEventListener('input', (e) => {
-    document.querySelectorAll('.pal-pane.projector').forEach((pane) => {
-      pane.style.setProperty('--roomlight', e.target.value / 100);
-    });
   });
 
   // footer master: author + page number, bottom-right. Leaf slides are counted;

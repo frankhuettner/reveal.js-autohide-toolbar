@@ -1,12 +1,36 @@
 # reveal.js-autohide-toolbar
 
+**Let an LLM build your deck.** A reveal.js deck is plain HTML — easy for a model
+to generate and edit — and this plugin lets you draw on it live while you present,
+from a toolbar that hides until you reach for it.
+
 **▶ [Try the live demo](https://huettner.io/reveal.js-autohide-toolbar/demo/)** —
-draw on the slides, type a text note, insert a board slide, save a portable
-copy, switch the deck format, all in your browser.
+draw on a slide, highlight a line, type a note, insert a board, and save a
+portable copy, all in your browser.
 
 A presenter toolkit for [reveal.js](https://revealjs.com), in one dependency-free
 file: **ink & text annotation** over your slides plus a **Slidev-style
-auto-hiding toolbar** with everything you need at the podium.
+auto-hiding toolbar** with everything you need when you present.
+
+## Why code + an LLM
+
+The reason to author a deck as code is simple: an LLM can build it. A reveal.js
+deck is plain HTML/CSS/JS — text a model reads and rewrites fluently — so you can
+describe the deck you want, get one back, and restructure it later in a sentence.
+A `.pptx` is a zip of XML parts: editable in principle, but not the single
+readable file a model works best with. You also get the usual web wins — it
+renders the same in any browser, fonts are *declared* rather than
+shipped-and-lost, and the deck is a plain file you own and keep under version
+control, no licence required.
+
+None of this is a knock on PowerPoint or the visual editors — their point-and-drag
+WYSIWYG is genuinely pleasant, and plenty of people rightly prefer it. Both ways
+have their place. This plugin is simply the piece that makes the code path feel
+complete when you present: live annotation from a toolbar that hides until you
+reach for it. (Drawing on reveal decks isn't new — see *Prior art* below — the aim
+here is to make it effortless.)
+
+## Features
 
 - ✏️ **Annotate slides** — pen, translucent highlighter, true per-stroke eraser,
   undo, colour palette (three neutrals plus five hues, each as an **ink**/**chalk**
@@ -410,6 +434,22 @@ This plugin is a maintained successor to both categories in one file: the toolba
 eraser/undo and correct cursor mapping, which chalkboard never had), plus the
 touch behaviour (pointer-events based, so styluses and palms behave), with no
 dependencies and no separate CSS to include.
+
+### On the visual editors
+
+Visual slide editors for reveal.js are good tools —
+[slides.com](https://slides.com) (the hosted editor from reveal's own author),
+[jbirky/parallax-presentations](https://github.com/jbirky/parallax-presentations),
+and [lucademenego99/icp-editor](https://github.com/lucademenego99/icp-editor). If
+you enjoy arranging slides by hand, reach for one; WYSIWYG is a genuinely nice way
+to work.
+
+The difference is the authoring model, not which is "better." A visual editor is
+ideal when you want to place things by hand; code is ideal when you'd rather have
+an LLM generate and restructure the deck and keep it as one HTML file you own.
+Both are legitimate. This plugin's job is smaller and specific: bring clean, live
+annotation to the code path — which historically leaned on separate drawing
+plugins — so presenting from a hand-written deck feels effortless.
 
 ## Standards compliance
 
