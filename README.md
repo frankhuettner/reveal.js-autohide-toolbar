@@ -153,16 +153,34 @@ If your audience expects the PPT look, plain CSS restores it:
               section.present[data-background-gradient], section.present[data-background-image],
               section.present[data-background-video], section.present[data-background-iframe])
     .slides { background: transparent; }
+  /* Overview (O) spreads every slide across the viewport, so the rules above —
+     which assume one centred slide — leave the bars filling the screen and the
+     slides' text lost in the black. Give reveal back full-size backgrounds and
+     paint a tile behind each slide: a dark slide-sorter with white slides
+     (the tile colour follows --r-background-color, so it tracks a dark theme).
+     A data-background-*color*/gradient slide keeps its own colour (reveal sets
+     it inline on the tile); :not(.stack) skips the vertical-stack parent tile. */
+  html:not(.print-pdf) .reveal.overview > .backgrounds {
+    width: 100%; height: 100%; top: 0; left: 0; transform: none;
+  }
+  html:not(.print-pdf) .reveal.overview .slides { background: transparent; }
+  html:not(.print-pdf) .reveal.overview .slide-background:not(.stack) {
+    background-color: var(--r-background-color, #fff);
+  }
 }
 ```
 
-Two details worth knowing. reveal deliberately paints a slide's
+Three details worth knowing. reveal deliberately paints a slide's
 `data-background` across the *entire viewport*, not just the slide box — the
 `.backgrounds` rule reins that in so background slides respect the bars like
 everything else (delete it to get reveal's full-bleed behaviour back, e.g.
-for video walls). And the `html:not(.print-pdf)` scope is not cosmetic:
+for video walls). The `html:not(.print-pdf)` scope is not cosmetic:
 reveal's print view copies the viewport's *computed* background onto every
-PDF page, so an unscoped black viewport would print black pages. (For the
+PDF page, so an unscoped black viewport would print black pages. And the
+`.overview` block keeps the slide overview (`O`) legible — the bars would
+otherwise fill it and swallow the slides' dark text; instead it restores
+reveal's per-slide backgrounds so the overview reads as a dark slide-sorter
+with white slides. (For the
 plugin's own colours — accent, toolbar, board surface — see
 [Theming](#theming) below.)
 
@@ -277,10 +295,13 @@ that takes them further sits in one place: the toolbar's **download/print menu**
   view most reliably (reveal's own recommendation).
 - **PDF / print clean** — the same, without annotations or boards.
 
-**Print margins.** reveal's print view forces slide `padding` to `0`, so a deck
-whose slides pad their *content* on screen should re-apply that padding in the
-print view to get the same margins in the PDF (`html.print-pdf .reveal .slides
-section { padding: … }`) — that also keeps text wrapping, and any ink, identical
+**Print margins.** reveal's print view forces slide `padding` to `0`
+(`section { padding: 0 !important }`), so a deck whose slides pad their
+*content* on screen should re-apply that padding in the print view to get the
+same margins in the PDF (`html.print-pdf .reveal .slides
+section:not(.stack):not([data-aht-board]) { padding: … !important }` — the
+`!important` plus the extra `:not()` classes are what out-specify reveal's own
+`!important`) — that also keeps text wrapping, and any ink, identical
 to the screen. The demo does exactly this. If instead you want an edge-to-edge
 deck (`margin: 0`) to print with a **frame** around the whole slide, set
 [`printMargin`](#options) — a print-only bump to reveal's `margin` that leaves

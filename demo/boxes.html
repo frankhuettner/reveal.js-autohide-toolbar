@@ -70,7 +70,6 @@
     #print-boxes .gap-block button { margin: 0; font: 600 15px/1 ui-monospace, monospace;
       cursor: pointer; border: 1px solid #cbd5e1; background: #fff; border-radius: 5px; padding: 4px 11px; }
     #print-boxes .pbx-note { margin: 4px 0 0; color: #5f6772; font-size: 16px; line-height: 1.45; }
-    #print-boxes .c-sb { color: #15803d; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -132,13 +131,13 @@
             <span class="num">1</span>
             <h4>From paper border to slide is the frame</h4>
             <p><b>Off by default</b> — the plugin leaves it at zero, so the slide box fills the whole sheet. Add one with the plugin's <code>printMargin</code> setting.</p>
-            <button onclick="const s=document.getElementById('print-boxes');const off=s.classList.toggle('noframe');this.textContent=off?'Add the frame back':'Remove the frame';">Remove the frame</button>
+            <button onclick="pbxToggle(this,'noframe','Remove the frame','Add the frame back')">Remove the frame</button>
           </div>
           <div class="gap-block g2">
             <span class="num">2</span>
             <h4>From slide border to text is the padding</h4>
             <p>The same gap you see on screen, <b>kept when you print</b> — so the PDF matches your slides.</p>
-            <button onclick="const s=document.getElementById('print-boxes');const off=s.classList.toggle('nopad');this.textContent=off?'Add the padding back':'Remove the padding';">Remove the padding</button>
+            <button onclick="pbxToggle(this,'nopad','Remove the padding','Add the padding back')">Remove the padding</button>
           </div>
           <p class="pbx-note">To add a margin at print time, lower <b>Scale</b> below 100% in the print dialog — the slide shrinks and leaves one. Its <b>Margins</b> setting can't: the page is fixed to your slide box's size.</p>
         </div>
@@ -179,6 +178,11 @@
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/reveal.js"></script>
 <script src="../reveal-autohide-toolbar.js"></script>
 <script>
+  // print-boxes explainer: toggle a class on the figure, swap the button label.
+  function pbxToggle(btn, cls, removeLabel, addBackLabel) {
+    const removed = document.getElementById('print-boxes').classList.toggle(cls);
+    btn.textContent = removed ? addBackLabel : removeLabel;
+  }
   Reveal.initialize({
     width: 960,
     height: 540,

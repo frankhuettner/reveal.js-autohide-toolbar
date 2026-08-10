@@ -137,7 +137,6 @@
     #print-boxes .gap-block p { margin: 0 0 7px; color: #333; font-size: 16px; line-height: 1.4; }
     #print-boxes .gap-block button { margin: 0; }
     #print-boxes .pbx-note { margin: 4px 0 0; color: #5f6772; font-size: 16px; line-height: 1.45; }
-    #print-boxes .c-sb { color: #15803d; font-weight: 700; }
     .reveal pre { box-shadow: none; width: 100%; font-size: .62em; }
     .reveal pre code { border-radius: 8px; padding: 14px 16px; }
     .reveal .math-display { font-size: 1.15em; margin: .3em 0; }
@@ -229,8 +228,23 @@
                   section.present[data-background-gradient], section.present[data-background-image],
                   section.present[data-background-video], section.present[data-background-iframe])
         .slides { background: transparent; }
+      /* Overview (press O) spreads every slide across the viewport, so the
+         single-centred-slide rules above no longer hold: the black bars fill
+         the screen and the slides' dark text vanishes into them. Restore
+         full-size backgrounds so reveal can seat a tile behind each slide, and
+         paint those tiles the slide colour — a dark slide-sorter with white
+         slides. A data-background-color/gradient slide keeps its own colour
+         (reveal sets it inline on the tile); :not(.stack) skips the
+         vertical-stack parent tile so it doesn't paint over the column. */
+      html:not(.print-pdf) .reveal.overview > .backgrounds {
+        width: 100%; height: 100%; top: 0; left: 0; transform: none;
+      }
+      html:not(.print-pdf) .reveal.overview .slides { background: transparent; }
+      html:not(.print-pdf) .reveal.overview .slide-background:not(.stack) {
+        background-color: var(--r-background-color, #fff);
+      }
     }
-  </style>
+</style>
 </head>
 <body>
 <div class="reveal">
@@ -409,13 +423,13 @@
             <span class="num">1</span>
             <h4>From paper border to slide is the frame</h4>
             <p><b>Off by default</b> — the plugin leaves it at zero, so your slide fills the whole sheet. Add one with the plugin's <code>printMargin</code> setting.</p>
-            <button onclick="const s=document.getElementById('print-boxes');const off=s.classList.toggle('noframe');this.textContent=off?'Add the frame back':'Remove the frame';">Remove the frame</button>
+            <button onclick="pbxToggle(this,'noframe','Remove the frame','Add the frame back')">Remove the frame</button>
           </div>
           <div class="gap-block g2">
             <span class="num">2</span>
             <h4>From slide border to text is the padding</h4>
             <p>The same gap you see on screen, <b>kept in the PDF</b> — so your printout looks like your slides.</p>
-            <button onclick="const s=document.getElementById('print-boxes');const off=s.classList.toggle('nopad');this.textContent=off?'Add the padding back':'Remove the padding';">Remove the padding</button>
+            <button onclick="pbxToggle(this,'nopad','Remove the padding','Add the padding back')">Remove the padding</button>
           </div>
           <p class="pbx-note">To add a margin at print time, lower <b>Scale</b> below 100% in the print dialog — the slide shrinks and leaves one. Its <b>Margins</b> setting can't: the page is fixed to your slide's size.</p>
         </div>
@@ -544,6 +558,11 @@
 <script src="https://cdn.jsdelivr.net/npm/reveal.js@6.0.1/dist/plugin/math.js"></script>
 <script src="../reveal-autohide-toolbar.js"></script>
 <script>
+  // print-boxes explainer: toggle a class on the figure, swap the button label.
+  function pbxToggle(btn, cls, removeLabel, addBackLabel) {
+    const removed = document.getElementById('print-boxes').classList.toggle(cls);
+    btn.textContent = removed ? addBackLabel : removeLabel;
+  }
   Reveal.initialize({
     width: 960,               // 16:9 — PowerPoint's slide box in points (1pt = 1px)
     height: 540,
@@ -589,16 +608,16 @@
     document.querySelectorAll('.reveal .slides .pdf-page').forEach((page) => {
       const sec = page.querySelector('section');
       if (!sec) return;
-      const board = sec.hasAttribute('data-aht-board');
+      if (sec.hasAttribute('data-aht-board')) return;   // boards show no footer/number, as on screen
       const key = sec.id || (sec.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!board && key !== lastKey) n++;   // a new counted slide; clones/boards hold the number
+      if (key !== lastKey) n++;   // a new counted slide; fragment clones reuse the current number
       lastKey = key;
-      if (getComputedStyle(page).position === 'static') page.style.position = 'relative';
+      page.style.position = 'relative';   // positioning context for the absolute footer layer (.pdf-page is already relative; harmless)
       const box = document.createElement('div');
       box.className = 'deck-footer-print';
       box.style.cssText = 'left:' + gx + 'px;top:' + gy + 'px;width:' + W + 'px;height:' + H + 'px;';
       const dateEl = document.createElement('span'); dateEl.className = 'deck-date'; dateEl.textContent = date;
-      const foot = document.createElement('span'); foot.className = 'deck-foot'; foot.textContent = 'Frank Huettner | ' + (n || 1);
+      const foot = document.createElement('span'); foot.className = 'deck-foot'; foot.textContent = 'Frank Huettner | ' + n;
       box.append(dateEl, foot);
       page.appendChild(box);
     });

@@ -1,6 +1,6 @@
 {
   "name": "reveal.js-autohide-toolbar",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Presenter toolkit for reveal.js: ink annotation (pen, eraser, undo), board slides (blackboard/whiteboard), PDF ink export, and a Slidev-style auto-hiding toolbar with navigation, overview, speaker view, and fullscreen. Touch-ready, persistent, dependency-free.",
   "main": "reveal-autohide-toolbar.js",
   "module": "reveal-autohide-toolbar.mjs",
