@@ -277,6 +277,15 @@ that takes them further sits in one place: the toolbar's **download/print menu**
   view most reliably (reveal's own recommendation).
 - **PDF / print clean** — the same, without annotations or boards.
 
+**Print margins.** reveal's print view forces slide `padding` to `0`, so a deck
+whose slides pad their *content* on screen should re-apply that padding in the
+print view to get the same margins in the PDF (`html.print-pdf .reveal .slides
+section { padding: … }`) — that also keeps text wrapping, and any ink, identical
+to the screen. The demo does exactly this. If instead you want an edge-to-edge
+deck (`margin: 0`) to print with a **frame** around the whole slide, set
+[`printMargin`](#options) — a print-only bump to reveal's `margin` that leaves
+the live deck untouched.
+
 Under the hood the PDF choices are just URLs — `?print-pdf&aht-print=1`
 (+`&aht-ink=0` for clean), so they script and bookmark well. `?aht-ink=0`
 works for presenting, too: it hides all stored, embedded **and baked**
@@ -319,6 +328,8 @@ Reveal.initialize({
     toggleKey: 'a',            // annotation key; change on autoSlide decks (core uses A for pause)
     palmRejection: true,       // after first stylus use, bare touches stop drawing
     boardSurface: 'white',     // new board slides: 'white' or 'dark'
+    printMargin: 0,            // opt-in PDF-only frame: a print-view bump to reveal's `margin`
+                               // (fraction of the slide); leaves the live deck untouched
   },
 });
 ```

@@ -102,6 +102,14 @@
  *                           (default true; finger drawing works until then)
  *   boardSurface  string    surface of NEW board slides: 'white' (default)
  *                           or 'dark' (blackboard, colour via --aht-board-bg)
+ *   printMargin   number    opt-in PDF/print gutter, as a fraction of the slide
+ *                           box (like reveal's `margin`). Only ever RAISES the
+ *                           margin for the print view — never the live deck — so
+ *                           an edge-to-edge (margin:0) deck can still print with a
+ *                           frame. Default 0 = respect the deck's own reveal
+ *                           margin. (A deck that pads its slide CONTENT is better
+ *                           off letting that padding apply in print instead —
+ *                           it keeps wrapping and ink identical to the screen.)
  *
  * Theming (CSS custom properties, set them on :root in the host deck):
  *   --aht-accent    active-tool highlight            (default #E31937)
@@ -169,6 +177,16 @@
     toggleKey: 'a',
     palmRejection: true,   // once a stylus is used, bare-touch input no longer draws
     boardSurface: 'white', // new board slides start white; 'dark' for blackboards
+    // Print/PDF gutter (opt-in): a margin kept around each slide when exporting
+    // to PDF, as a fraction of the slide box (exactly like reveal's own `margin`).
+    // Applied to the PRINT VIEW ONLY and never below the deck's own margin, so a
+    // deck can stay edge-to-edge on screen (margin:0) yet print with a frame,
+    // untouched live. Default 0 = respect the deck's reveal margin (reveal already
+    // honours it in print). Reach for this on a margin:0 deck that has no other
+    // inset; a deck that already pads its slide CONTENT is better off letting that
+    // padding apply in print (see the demo) — it keeps text wrapping, and any ink,
+    // identical to the screen. e.g. 0.04 = reveal's default gutter.
+    printMargin: 0,
   };
 
   // ---------- shared icon path data (lucide) ----------
@@ -2085,6 +2103,16 @@ body.aht-noselect .aht-text-edit, body.aht-noselect .aht-text-edit * {
   function initPrint(reveal) {
     state.Reveal = reveal;
     readCfg(reveal);
+    // Print gutter (opt-in, default 0) — reveal's ?print-pdf uses config.margin
+    // as the page gutter, so a deck can raise it for the PDF only via printMargin
+    // to frame each slide. Set it here — plugin init runs BEFORE reveal builds
+    // the print pages on 'load', and this pre-ready configure() is a pure config
+    // write (reveal applies no side effects until ready). We only ever raise the
+    // margin, never shrink an author's existing gutter, and the live deck is a
+    // separate tab so it stays untouched. renderPrintInk reads the SAME live
+    // margin, so ink and text stay anchored to the slide box.
+    const pm = +cfg.printMargin;
+    if (isFinite(pm) && pm > (reveal.getConfig().margin || 0)) reveal.configure({ margin: pm });
     // opened from the export menu (aht-print=1): once reveal's print layout is
     // done and web fonts have settled, pop the browser's print dialog — the
     // user only picks "Save as PDF" there. The settle delay gives async

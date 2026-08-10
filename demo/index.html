@@ -39,11 +39,19 @@
        reveal only sets box-sizing:border-box on sections in PRINT mode, so on
        screen `width:100%` + horizontal padding = content-box overflow: the right
        padding pushes text past the slide box into the letterbox. border-box fixes
-       it (print keeps reveal's own padding rules). */
+       it. */
     @media screen {
       .reveal .slides section:not(.stack) {
         text-align: left; box-sizing: border-box; padding: 26px 44px;
       }
+    }
+    /* reveal's print view forces `section { padding: 0 !important }`, so re-apply
+       the SAME content inset there — otherwise the PDF prints edge-to-edge and,
+       worse, text reflows to the full slide width (different line breaks, and any
+       ink drawn around it drifts). Boards fill the box, so skip them. The extra
+       classes out-specify reveal's !important. */
+    html.print-pdf .reveal .slides section:not(.stack):not([data-aht-board]) {
+      text-align: left; box-sizing: border-box; padding: 26px 44px !important;
     }
     .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
       color: var(--deck-navy); font-weight: 700; text-transform: none;
@@ -79,6 +87,57 @@
     .reveal .slides button:hover { background: var(--deck-navy); color: #fff; }
     .demo-hint { font-size: .8em; color: #6b7480; line-height: 1.45; }   /* 16 */
     .demo-try { color: var(--skku-orange); font-weight: 700; }
+    /* print box-model figure — slide "Two spaces around your printed slide".
+       A printed PAGE shown large, holding YOUR SLIDE (green), holding YOUR TEXT
+       (blue). The two print margins are the spaces between them: ① page → slide
+       = printMargin (a frame, 0 by default), ② slide → text = the padding your
+       slides already have, kept in the PDF. Shown opened up so both are visible;
+       each button removes one so you see what it does. Plain-language on the
+       slide — no reveal.js knowledge assumed. Type stays ≥16px (deck's small). */
+    #print-boxes .lead { margin: 0 0 8px; }
+    #print-boxes .pbx { display: flex; gap: 34px; align-items: center; margin: .1em 0 .2em; }
+    #print-boxes .pg {                          /* the paper page (what comes out of the printer) */
+      position: relative; flex: none; width: 440px; height: 248px; box-sizing: border-box;
+      background: #e4e8ee; border-radius: 3px; box-shadow: 0 5px 18px rgba(20,30,50,.22);
+      padding: 34px; transition: padding .35s ease; }
+    #print-boxes.noframe .pg { padding: 0; }                    /* the real default: no frame */
+    #print-boxes .sb {                          /* your slide — the background and all ink live here */
+      position: relative; width: 100%; height: 100%; box-sizing: border-box;
+      outline: 2px dashed #15803d; background: #eef5ff; padding: 26px; transition: padding .35s ease; }
+    #print-boxes.nopad .sb { padding: 0; }                      /* text pushed to the slide edge */
+    #print-boxes .cb {                          /* your text — a faux slide: title bar + lines */
+      position: relative; width: 100%; height: 100%; box-sizing: border-box;
+      outline: 2px solid #2563eb; background: #fff;
+      display: flex; flex-direction: column; justify-content: center; gap: 13px; padding: 18px 22px; }
+    #print-boxes .cb i { display: block; border-radius: 3px; }
+    #print-boxes .cb .t { height: 15px; width: 56%; background: var(--deck-navy); }
+    #print-boxes .cb .l { height: 8px; background: #ccd3dd; }
+    #print-boxes .cb .l.s { width: 74%; }
+    #print-boxes .tag { position: absolute; font: 700 14px/1 var(--deck-font); z-index: 2; }  /* names a region */
+    #print-boxes .tag-pg { top: 9px; left: 12px; color: #6b7078; transition: opacity .35s ease; }
+    #print-boxes.noframe .tag-pg { opacity: 0; }                /* no frame → nothing to label */
+    #print-boxes .tag-sb { bottom: 9px; left: 12px; color: #15803d; }
+    #print-boxes .tag-cb { bottom: 9px; right: 12px; color: #2563eb; }
+    #print-boxes .gap {                         /* numbered badge straddling a boundary line */
+      position: absolute; left: 50%; top: -12px; transform: translateX(-50%); z-index: 3;
+      width: 24px; height: 24px; border-radius: 50%; color: #fff; border: 2px solid #fff;
+      font: 700 13px/20px var(--deck-font); text-align: center; box-shadow: 0 1px 5px rgba(0,0,0,.3); }
+    #print-boxes .gap-1 { background: #6b7078; }                /* on the page → slide line */
+    #print-boxes .gap-2 { background: #2563eb; }                /* on the slide → text line */
+    /* right column: a titled block per space, plain language, readable size */
+    #print-boxes .pbx-exp { flex: 1; text-align: left; }
+    #print-boxes .gap-block { position: relative; border-left: 4px solid #6b7078; padding-left: 22px; margin: 0 0 12px; }
+    #print-boxes .gap-block.g2 { border-left-color: #2563eb; }
+    #print-boxes .gap-block .num {              /* sits on the accent bar, like the figure's badges on a line */
+      position: absolute; left: -13px; top: 1px; width: 24px; height: 24px; border-radius: 50%;
+      border: 2px solid #fff; color: #fff; font: 700 14px/22px var(--deck-font); text-align: center; }
+    #print-boxes .gap-block.g1 .num { background: #6b7078; }
+    #print-boxes .gap-block.g2 .num { background: #2563eb; }
+    #print-boxes .gap-block h4 { margin: 0 0 5px; color: var(--deck-navy); font-size: 18px; font-weight: 700; line-height: 1.2; }
+    #print-boxes .gap-block p { margin: 0 0 7px; color: #333; font-size: 16px; line-height: 1.4; }
+    #print-boxes .gap-block button { margin: 0; }
+    #print-boxes .pbx-note { margin: 4px 0 0; color: #5f6772; font-size: 16px; line-height: 1.45; }
+    #print-boxes .c-sb { color: #15803d; font-weight: 700; }
     .reveal pre { box-shadow: none; width: 100%; font-size: .62em; }
     .reveal pre code { border-radius: 8px; padding: 14px 16px; }
     .reveal .math-display { font-size: 1.15em; margin: .3em 0; }
@@ -114,8 +173,11 @@
     .reveal .pal-slider #pal-room-val { font-weight: 700; color: #333;
       min-width: 2.6em; text-align: right; }
     /* footer master: date bottom-left, attribution + page number bottom-right
-       of the slide box. Screen only — reveal's print view paginates, so a
-       viewport-fixed footer would land on just one PDF page. */
+       of the slide box. The one viewport-fixed footer is screen only — reveal's
+       print view paginates into per-slide pages, so a single fixed footer would
+       land on just one PDF page. In print we stamp a copy into every page
+       instead (see the pdf-ready handler); .deck-footer-print mirrors these
+       rules inside a slide-box-sized layer. */
     @media screen {
       .deck-footer { position: fixed; z-index: 6; pointer-events: none;
         width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16));
@@ -133,6 +195,17 @@
         font: 400 calc(min(100vh, 100vw * 9 / 16) / 45)/1 var(--deck-font);
         color: var(--deck-muted); white-space: nowrap; }
     }
+    /* print: hide the fixed footer (it would flow onto its own stray page) and
+       style the per-page copies. The layer is sized to the slide box (960×540),
+       so the same 44/960 + 3.2% offsets and 540/45 = 12px type all resolve as on
+       screen — no viewport units, since reveal scales the page to the paper. */
+    html.print-pdf .deck-footer { display: none !important; }
+    .deck-footer-print { position: absolute; pointer-events: none; z-index: 6; }
+    .deck-footer-print .deck-date, .deck-footer-print .deck-foot {
+      position: absolute; bottom: 3.2%; font: 400 12px/1 var(--deck-font);
+      color: var(--deck-muted); white-space: nowrap; }
+    .deck-footer-print .deck-date { left: calc(100% * 44 / 960); }
+    .deck-footer-print .deck-foot { right: calc(100% * 44 / 960); }
 
     /* PPT-style letterbox (pure CSS theming, not the plugin): black bars,
        white slide box. reveal itself never shows a letterbox — it paints the
@@ -314,6 +387,42 @@
       <aside class="notes">The portable copy is the handoff format — email it, archive it, or open it years later.</aside>
     </section>
 
+    <!-- 10b · where print margins come from (the boxes, made visible) -->
+    <section id="print-boxes">
+      <h2>Two spaces around your printed slide</h2>
+      <p class="lead">When you print, two spaces sit between the paper's edge and your text:</p>
+      <div class="pbx">
+        <div class="pg">
+          <span class="tag tag-pg">paper</span>
+          <div class="sb">
+            <span class="gap gap-1">1</span>
+            <span class="tag tag-sb">your slide</span>
+            <div class="cb">
+              <span class="gap gap-2">2</span>
+              <span class="tag tag-cb">your text</span>
+              <i class="t"></i><i class="l"></i><i class="l s"></i>
+            </div>
+          </div>
+        </div>
+        <div class="pbx-exp">
+          <div class="gap-block g1">
+            <span class="num">1</span>
+            <h4>From paper border to slide is the frame</h4>
+            <p><b>Off by default</b> — the plugin leaves it at zero, so your slide fills the whole sheet. Add one with the plugin's <code>printMargin</code> setting.</p>
+            <button onclick="const s=document.getElementById('print-boxes');const off=s.classList.toggle('noframe');this.textContent=off?'Add the frame back':'Remove the frame';">Remove the frame</button>
+          </div>
+          <div class="gap-block g2">
+            <span class="num">2</span>
+            <h4>From slide border to text is the padding</h4>
+            <p>The same gap you see on screen, <b>kept in the PDF</b> — so your printout looks like your slides.</p>
+            <button onclick="const s=document.getElementById('print-boxes');const off=s.classList.toggle('nopad');this.textContent=off?'Add the padding back':'Remove the padding';">Remove the padding</button>
+          </div>
+          <p class="pbx-note">To add a margin at print time, lower <b>Scale</b> below 100% in the print dialog — the slide shrinks and leaves one. Its <b>Margins</b> setting can't: the page is fixed to your slide's size.</p>
+        </div>
+      </div>
+      <aside class="notes">Plain version, no reveal.js assumed. Two spaces between paper and text: ① paper → slide is the outer frame, set by printMargin — none by default, so your slide fills the whole sheet; the frame shown is printMargin turned up, and "Remove the frame" shows the real default. ② slide → text is the padding your slides already have on screen; it's re-applied in the PDF so the printout looks like the screen. Anything you draw or type is anchored to the slide, so it prints in place no matter the frame. printMargin is a plugin option — Reveal.initialize({ autohideToolbar: { printMargin: 0.05 } }), and it defaults to 0. To change the outer margin: set that option, or lower Scale below 100% in the print dialog (the slide shrinks, leaving a border). The dialog's Margins control does nothing — reveal fixes the page size to your slide.</aside>
+    </section>
+
     <!-- 11 · the visual editors — agnostic -->
     <section>
       <h2>What about the slide editors?</h2>
@@ -462,6 +571,38 @@
   };
   Reveal.on('ready', updateFooter);
   Reveal.on('slidechanged', updateFooter);
+
+  // print footer: reveal paginates into per-slide .pdf-page boxes, so the one
+  // fixed footer can't ride along — stamp a copy into every page, anchored to
+  // the slide box the same way the plugin anchors its printed ink. Page numbers
+  // follow the on-screen rule: count leaf slides, let board pages and fragment
+  // steps (page CLONES with identical text) reuse the current number.
+  Reveal.on('pdf-ready', () => {
+    const cfg = Reveal.getConfig();
+    const size = Reveal.getComputedSlideSize ? Reveal.getComputedSlideSize() : null;
+    const W = (size && size.width) || cfg.width || 960;
+    const H = (size && size.height) || cfg.height || 540;
+    const m = cfg.margin || 0;
+    const gx = (Math.floor(W * (1 + m)) - W) / 2, gy = (Math.floor(H * (1 + m)) - H) / 2;
+    const date = (document.querySelector('.deck-date') || {}).textContent || '';
+    let n = 0, lastKey = null;
+    document.querySelectorAll('.reveal .slides .pdf-page').forEach((page) => {
+      const sec = page.querySelector('section');
+      if (!sec) return;
+      const board = sec.hasAttribute('data-aht-board');
+      const key = sec.id || (sec.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!board && key !== lastKey) n++;   // a new counted slide; clones/boards hold the number
+      lastKey = key;
+      if (getComputedStyle(page).position === 'static') page.style.position = 'relative';
+      const box = document.createElement('div');
+      box.className = 'deck-footer-print';
+      box.style.cssText = 'left:' + gx + 'px;top:' + gy + 'px;width:' + W + 'px;height:' + H + 'px;';
+      const dateEl = document.createElement('span'); dateEl.className = 'deck-date'; dateEl.textContent = date;
+      const foot = document.createElement('span'); foot.className = 'deck-foot'; foot.textContent = 'Frank Huettner | ' + (n || 1);
+      box.append(dateEl, foot);
+      page.appendChild(box);
+    });
+  });
 
   // ink-palette slide: build the swatch strokes and wire the room-light
   // slider. Pure DOM — it's just HTML in the slide, so dragging the control
