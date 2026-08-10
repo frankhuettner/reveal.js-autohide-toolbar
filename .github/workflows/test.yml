@@ -1,6 +1,6 @@
 # Runs the full Playwright suite (chromium + webkit) on every push/PR.
-# Note: authored locally and not yet exercised on GitHub — if the first run
-# fails, the usual suspect is browser OS-dependencies (the install-deps step).
+# If a run fails on browser launch, the usual suspect is browser OS
+# dependencies (the install-deps step).
 name: test
 on:
   push:

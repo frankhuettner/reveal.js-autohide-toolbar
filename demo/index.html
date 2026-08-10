@@ -82,6 +82,37 @@
     .reveal pre { box-shadow: none; width: 100%; font-size: .62em; }
     .reveal pre code { border-radius: 8px; padding: 14px 16px; }
     .reveal .math-display { font-size: 1.15em; margin: .3em 0; }
+    /* ---------- interactive ink-palette slide ----------
+       the palette shown four ways — white slide / dark board × on-screen /
+       through-a-projector — plus a room-light slider. It proves a reveal
+       slide can hold a working control (and dragging it never flips the
+       slide, like the aspect-ratio buttons). */
+    .reveal .pal-grid { display: grid; grid-template-columns: auto 1fr 1fr;
+      gap: 6px 12px; align-items: center; margin: .2em 0 .5em; }
+    .reveal .pal-head { font: 700 .66em var(--deck-font); color: var(--deck-navy);
+      text-align: center; }
+    .reveal .pal-rowlab { font: 700 .6em var(--deck-font); color: #6b7480;
+      text-align: right; white-space: nowrap; }
+    .reveal .pal-pane { border-radius: 10px; padding: 6px 10px;
+      position: relative; overflow: hidden; }
+    .reveal .pal-pane.light { background: #fff; box-shadow: inset 0 0 0 1px #e3e7ec; }
+    .reveal .pal-pane.dark  { background: #000; }
+    .reveal .pal-pane svg { width: 100%; height: 54px; display: block; }
+    .reveal .pal-pane path { fill: none; stroke-width: 5; stroke-linecap: round; }
+    /* projector column: contrast()/saturate() model the projector's limited
+       gamut; the ::after veil is ambient room light, scaled by the slider. */
+    .reveal .pal-pane.proj { filter: contrast(.72) saturate(.6) brightness(1.06); }
+    .reveal .pal-pane::after { content: ''; position: absolute; inset: 0;
+      background: #fff; opacity: 0; pointer-events: none; }
+    .reveal .pal-pane.proj::after { opacity: var(--pal-ambient, 0); }
+    /* the room-light control sits in the third grid column, directly under
+       the projector panes it drives. */
+    .reveal .pal-slider { grid-column: 3; display: flex; align-items: center;
+      gap: .5em; margin-top: 3px; font-size: .72em; color: #6b7480; }
+    .reveal .pal-slider input[type=range] { flex: 1; min-width: 0;
+      accent-color: var(--skku-orange); }
+    .reveal .pal-slider #pal-room-val { font-weight: 700; color: #333;
+      min-width: 2.6em; text-align: right; }
     /* footer master: date bottom-left, attribution + page number bottom-right
        of the slide box. Screen only — reveal's print view paginates, so a
        viewport-fixed footer would land on just one PDF page. */
@@ -92,11 +123,13 @@
       /* 12pt in slide space: the footer box == the slide box, so height/45 = 12
          when the box is 540 tall, and scales 1:1 with it (reveal doesn't scale
          this viewport-fixed layer, so we scale the type ourselves). */
-      .deck-footer #deck-foot { position: absolute; right: 2.4%; bottom: 3.2%;
+      .deck-footer #deck-foot { position: absolute; right: calc(100% * 44 / 960); bottom: 3.2%;
         font: 400 calc(min(100vh, 100vw * 9 / 16) / 45)/1 var(--deck-font);
         color: var(--deck-muted); white-space: nowrap; }
-      /* date: bottom-left, mirroring the attribution on the right */
-      .deck-footer .deck-date { position: absolute; left: 2.4%; bottom: 3.2%;
+      /* date: bottom-left, aligned to the body's 44px left padding (44/960 of
+         the slide box) so it lines up with the headline/body text; the
+         attribution mirrors it on the right */
+      .deck-footer .deck-date { position: absolute; left: calc(100% * 44 / 960); bottom: 3.2%;
         font: 400 calc(min(100vh, 100vw * 9 / 16) / 45)/1 var(--deck-font);
         color: var(--deck-muted); white-space: nowrap; }
     }
@@ -192,7 +225,36 @@
       <aside class="notes">The highlighter draws behind the pen layer and round-trips through export like any other ink.</aside>
     </section>
 
-    <!-- 6 · text tool -->
+    <!-- 6 · the ink palette — live, interactive (colours across a 2×2 + a slider) -->
+    <section>
+      <h2>The same palette, four ways</h2>
+      <p class="lead">White slide or dark board · on screen or through a projector.</p>
+      <div class="pal-grid">
+        <div></div>
+        <div class="pal-head">On screen</div>
+        <div class="pal-head">Through a projector</div>
+        <div class="pal-rowlab">white slide</div>
+        <div class="pal-pane light" id="pal-sw"></div>
+        <div class="pal-pane light proj" id="pal-pw"></div>
+        <div class="pal-rowlab">dark board</div>
+        <div class="pal-pane dark" id="pal-sb"></div>
+        <div class="pal-pane dark proj" id="pal-pb"></div>
+        <div class="pal-slider">
+          <label for="pal-room">room light</label>
+          <input type="range" id="pal-room" min="0" max="50" value="12" />
+          <span id="pal-room-val">12%</span>
+        </div>
+      </div>
+      <p class="demo-hint"><span class="demo-try">Drag the slider</span> to raise the room light and watch the
+      projector column wash out. Each hue ships in two shades — a calmer one and a more luminous one; you might
+      reach for the calmer shades on white and the luminous ones on a board, but several read nicely on white too —
+      so judge by eye. Swatches and slider are live, interactive HTML right in the slide — dragging adjusts the room
+      light without advancing to the next slide (reveal.js normally reads a drag as a swipe; taps on a control don't,
+      like the aspect-ratio buttons a few slides on).</p>
+      <aside class="notes">The default pen palette is a few neutrals plus five hue pairs (a calmer Tailwind 700 and a more luminous 300), picked in demo/palette.html against a simulated projector. This slide embeds that lab live — which shade goes where is the presenter's call.</aside>
+    </section>
+
+    <!-- 7 · text tool -->
     <section>
       <h2>Type, don't just scribble</h2>
       <p class="lead">Press <kbd>T</kbd>
@@ -206,7 +268,7 @@
       <aside class="notes">Text is kept as HTML, so a saved copy or the PDF carries it as real, selectable text.</aside>
     </section>
 
-    <!-- 7 · boards -->
+    <!-- 8 · boards -->
     <section>
       <h2>A whiteboard, mid-sentence</h2>
       <p class="lead">The board button
@@ -219,7 +281,7 @@
       <aside class="notes">Great for an unplanned derivation or a question you didn't prepare for.</aside>
     </section>
 
-    <!-- 8 · ink is real geometry (KEEP: buttons for the tap-ignore + button-slide test) -->
+    <!-- 9 · ink is real geometry (KEEP: buttons for the tap-ignore + button-slide test) -->
     <section>
       <h2>Your ink is real geometry</h2>
       <p class="lead">Draw a circle, then switch the deck format:</p>
@@ -234,7 +296,7 @@
       <aside class="notes">This is the test that separates a real annotation model from a screenshot-over-the-slide hack.</aside>
     </section>
 
-    <!-- 9 · save / ship / print -->
+    <!-- 10 · save / ship / print -->
     <section>
       <h2>Save it. Ship it. Print it.</h2>
       <ul>
@@ -252,7 +314,7 @@
       <aside class="notes">The portable copy is the handoff format — email it, archive it, or open it years later.</aside>
     </section>
 
-    <!-- 10 · the visual editors — agnostic -->
+    <!-- 11 · the visual editors — agnostic -->
     <section>
       <h2>What about the slide editors?</h2>
       <p class="demo-hint" style="margin-bottom:.6em">Some build web decks by hand —
@@ -268,7 +330,7 @@
       <aside class="notes">Positioning, not a takedown: pick whichever fits the moment.</aside>
     </section>
 
-    <!-- 11 · math, first-class -->
+    <!-- 12 · math, first-class -->
     <section>
       <h2>Real LaTeX, first-class</h2>
       <p class="lead">Write mathematics the way you already write it:</p>
@@ -281,7 +343,7 @@
       <aside class="notes">One script tag and one plugin entry; the math plugin ships with reveal.</aside>
     </section>
 
-    <!-- 12 · fragments (horizontal — kept fragment-free of the stack below, so the
+    <!-- 13 · fragments (horizontal — kept fragment-free of the stack below, so the
              down arrow descends on the first press instead of stepping fragments) -->
     <section>
       <h2>It's a full reveal.js deck</h2>
@@ -299,7 +361,7 @@
       <aside class="notes">Nothing on this slide is custom — it's stock reveal.js features.</aside>
     </section>
 
-    <!-- 13 · vertical stack (VERTICAL STACK: keep for the stack test. The top slide
+    <!-- 14 · vertical stack (VERTICAL STACK: keep for the stack test. The top slide
              stays fragment-free so pressing the down arrow descends immediately —
              reveal's directional nav steps fragments before it changes slides.) -->
     <section>
@@ -322,7 +384,7 @@
       </section>
     </section>
 
-    <!-- 14 · references -->
+    <!-- 15 · references -->
     <section>
       <h2>References</h2>
       <ul>
@@ -343,7 +405,7 @@
       <aside class="notes">Credits and pointers: the plugin, reveal itself, the alternatives, and the fonts/libraries in play.</aside>
     </section>
 
-    <!-- 15 · close -->
+    <!-- 16 · close -->
     <section>
       <h2>A fresh, familiar toolbar for reveal.js</h2>
       <p class="lead">One dependency-free file — add it in one line:</p>
@@ -400,6 +462,37 @@
   };
   Reveal.on('ready', updateFooter);
   Reveal.on('slidechanged', updateFooter);
+
+  // ink-palette slide: build the swatch strokes and wire the room-light
+  // slider. Pure DOM — it's just HTML in the slide, so dragging the control
+  // never flips the slide (same guarantee as the aspect-ratio buttons).
+  (function () {
+    // the full adopted palette: three neutrals (white, grey, black), then five
+    // hue pairs (a calmer 700 and a more luminous 300). The SAME set goes in
+    // every pane, so the audience can compare it across white/dark ×
+    // screen/projector and judge which shade they like where — no prescription.
+    // (White reads only on the dark panes, black only on the light ones — which
+    // is the whole point of shipping both neutrals.)
+    const PALETTE = ['#FFFFFF','#8E8E93','#000000',
+      '#B91C1C','#FCA5A5', '#B45309','#FCD34D', '#15803D','#86EFAC',
+      '#1D4ED8','#93C5FD', '#7E22CE','#D8B4FE'];
+    const squiggle = (x) => `M${x} 70 q 10 -55 20 -25 q 8 22 16 -8 q 7 -25 14 -3 q 6 18 12 2`;
+    const svg = (colors) => `<svg viewBox="0 0 ${colors.length * 70} 90" preserveAspectRatio="none">` +
+      colors.map((c, i) => `<path d="${squiggle(8 + i * 70)}" stroke="${c}"/>`).join('') + '</svg>';
+    const panes = ['pal-sw', 'pal-pw', 'pal-sb', 'pal-pb'].map((id) => document.getElementById(id));
+    if (panes.some((p) => !p)) return;
+    panes.forEach((p) => p.insertAdjacentHTML('beforeend', svg(PALETTE)));
+    const grid = document.querySelector('.pal-grid');
+    const slider = document.getElementById('pal-room');
+    const readout = document.getElementById('pal-room-val');
+    const sync = () => {
+      const v = +slider.value;
+      readout.textContent = v + '%';
+      grid.style.setProperty('--pal-ambient', v / 100);  // only .proj panes read it
+    };
+    slider.addEventListener('input', sync);
+    sync();
+  })();
 </script>
 </body>
 </html>
