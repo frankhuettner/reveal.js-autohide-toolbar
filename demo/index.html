@@ -14,8 +14,43 @@
        condensed text. -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <style>
-    /* ---------- sober slide master (Pretendard, navy titles, square bullets) ----------
-       plain CSS theming layered on reveal's white theme; delete for the defaults. */
+    /* ============================================================================
+       STYLE GUIDE — the deck's design system in one place. Two guides folded in:
+       (1) the "sober slide master" (canvas, palette, type, layout) and
+       (2) the shadcn-flavoured UI kit (callout / card / badge / kbd / tooltip).
+       Plain CSS layered on reveal's white theme; delete this block for the defaults.
+
+       CANVAS   960×540 = PowerPoint 16:9 in points, 1pt = 1px. Content is top- and
+                left-aligned, edge-to-edge (margin:0), with 44px side insets kept on
+                screen AND in the PDF. No scroll — every slide must fit inside 540.
+       TYPE     Pretendard throughout. Sizes map 1:1 to PowerPoint points:
+                  mega 38 (one-idea slide) · headline/h2 28 · subhead/h3 24 ·
+                  body 20 · small/.demo-hint 16 · footer 12.
+                Never below 16 for readable text. Titles: navy, bold, left, no caps.
+       PALETTE  SKKU — orange #FF6C0F (accent/creation) · green #8DC63F & green-dark
+                #124633 (wins/success) · navy #1F3864 (titles). Body ink #1a1a1a,
+                emphasis #111. UI neutrals — hairline #e3e7ec, wash #f6f8fa,
+                muted text #6b7480, footer muted #9aa3ad.
+       ACCENT   One accent per element. Orange = "do this / try it"; blue #2563eb =
+                "good to know / info"; green-dark = success. Never two shouting.
+       LAYOUT   Consulting/B-school master: square ▪ bullets (✓ for win lists),
+                lead line = bold black one-liner under the title.
+       KIT      The shadcn language — hairline border, faint wash, one soft shadow,
+                8–12px radius, restrained:
+                  .callout .tip|.info|.note — boxed note w/ accent bar (p.demo-try is
+                                              auto-styled as a tip; no class needed).
+                  .card / .card-grid        — a surface / an equal-height row of them.
+                  .card-title               — navy bold heading (pairs with a badge/num).
+                  .badge .green|.orange     — a small uppercase status pill.
+                  kbd                       — a keycap (subtle 2px bottom border).
+                  buttons                   — outline primary; soft secondary in cards.
+                Icons: Lucide, sized to the surrounding text (.ico = .95em).
+       PRINT    All of the above is print-safe — reveal copies computed backgrounds
+                into the PDF, so washes/cards/badges survive; the 44px inset and the
+                footer are re-stamped per page (see the pdf-ready handlers below).
+       ============================================================================
+       sober slide master (Pretendard, navy titles, square bullets) — plain CSS
+       theming layered on reveal's white theme; delete for the defaults. */
     :root {
       /* SKKU official palette — skku.edu/skku/about/symbol */
       --skku-orange: #FF6C0F;             /* Pantone 1585C — creation/innovation */
@@ -79,14 +114,56 @@
     .reveal ul.win li::before { content: '✓'; color: var(--skku-green-dark); font-weight: 700; }
     /* inline lucide glyphs, sized to the surrounding text (real toolbar icons) */
     .reveal .ico { height: .95em; width: .95em; vertical-align: -.14em; }
-    .reveal kbd { font: 600 .78em var(--deck-font); background: #eef1f5; color: #333;
-                  border: 1px solid #d3d9e0; border-radius: 4px; padding: .04em .4em; }
+    /* keycaps — a hint of depth (thicker bottom border), shadcn-restrained */
+    .reveal kbd { font: 600 .76em var(--deck-font); background: #f6f8fa; color: #2b3340;
+                  border: 1px solid #d7dde4; border-bottom-width: 2px; border-radius: 5px;
+                  padding: .05em .45em; }
     .reveal .slides button { font: 600 .8em var(--deck-font); color: var(--deck-navy);
       background: #fff; border: 1.5px solid var(--deck-navy); border-radius: 6px;
       padding: .3em .9em; margin-right: .4em; cursor: pointer; }
     .reveal .slides button:hover { background: var(--deck-navy); color: #fff; }
     .demo-hint { font-size: .8em; color: #6b7480; line-height: 1.45; }   /* 16 */
     .demo-try { color: var(--skku-orange); font-weight: 700; }
+    /* ---------- small UI components (plain CSS, no framework) ----------
+       the "shadcn" look — a hairline border, a faint wash, one restrained accent —
+       expressed in the deck's own tokens. Print-safe (reveal keeps computed bg). */
+    /* callout — a boxed note with an accent bar: .tip = orange (do this) ·
+       .info = blue (good to know) · .note = neutral. A standalone p.demo-try is
+       styled as a tip WITHOUT needing the classes in its HTML, so the inline
+       span.demo-try (used mid-sentence) is left untouched. Padding kept tight to
+       protect the slide's vertical budget (960×540, top-aligned, no scroll). */
+    .reveal .callout, .reveal p.demo-try {
+      border: 1px solid #e3e7ec; border-left: 3px solid var(--cl-accent, var(--deck-muted));
+      background: var(--cl-wash, #f6f8fa); border-radius: 8px; color: #24303f;
+      font-size: .86em; line-height: 1.4; padding: .5em .8em; margin: .5em 0; }
+    .reveal .callout > :first-child { margin-top: 0; }
+    .reveal .callout > :last-child { margin-bottom: 0; }
+    .reveal .callout.tip, .reveal p.demo-try { --cl-accent: var(--skku-orange); --cl-wash: #fff6f0; }
+    .reveal .callout.info { --cl-accent: #2563eb;          --cl-wash: #eff5ff; }
+    .reveal .callout.note { --cl-accent: var(--deck-muted); --cl-wash: #f6f8fa; }
+    /* the "try it" prompt keeps a ▸ lead-in and a touch more weight */
+    .reveal p.demo-try { font-weight: 500; padding: .4em .75em; margin: .45em 0 .85em; }
+    .reveal p.demo-try::before { content: '▸'; color: var(--skku-orange);
+      font-weight: 800; margin-right: .5em; }
+    /* badge — a small status pill (hairline default, filled green/orange) */
+    .reveal .badge { display: inline-flex; align-items: baseline; gap: .3em;
+      font: 700 .62em var(--deck-font); letter-spacing: .04em; text-transform: uppercase;
+      color: var(--deck-navy); background: #fff; border: 1px solid #e3e7ec;
+      border-radius: 999px; padding: .28em .7em; vertical-align: .16em; }
+    .reveal .badge.green  { color: #fff; background: var(--skku-green-dark); border-color: transparent; }
+    .reveal .badge.orange { color: #fff; background: var(--skku-orange);     border-color: transparent; }
+    /* card — a plain surface for grouping related content; .card-grid lays a
+       set of them side by side at equal height. Body text stays ≥16px (.82×20). */
+    .reveal .card { background: #fff; border: 1px solid #e3e7ec; border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(20,30,50,.05), 0 6px 20px rgba(20,30,50,.05);
+      padding: .65em .8em; }
+    .reveal .card > :first-child { margin-top: 0; }
+    .reveal .card > :last-child { margin-bottom: 0; }
+    .reveal .card-title { font: 700 1em var(--deck-font); color: var(--deck-navy);
+      margin: 0 0 .35em; display: flex; align-items: center; gap: .4em; }
+    .reveal .card-grid { display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 14px; align-items: stretch; margin: .3em 0 .6em; }
+    .reveal .card-grid .card p { margin: 0; font-size: .82em; line-height: 1.4; color: #24303f; }
     /* print box-model figure — slide "Two spaces around your printed slide".
        A printed PAGE shown large, holding YOUR SLIDE (green), holding YOUR TEXT
        (blue). The two print margins are the spaces between them: ① page → slide
@@ -94,8 +171,16 @@
        slides already have, kept in the PDF. Shown opened up so both are visible;
        each button removes one so you see what it does. Plain-language on the
        slide — no reveal.js knowledge assumed. Type stays ≥16px (deck's small). */
+    #print-boxes {                              /* one source for the figure's region colours — reused by the cards + note */
+      --c-paper: #6b7078;   /* the sheet / page */
+      --c-slide: #15803d;   /* your slide */
+      --c-text:  #2563eb;   /* your text */
+    }
+    #print-boxes .c-paper { color: var(--c-paper); font-weight: 600; }
+    #print-boxes .c-slide { color: var(--c-slide); font-weight: 600; }
+    #print-boxes .c-text  { color: var(--c-text);  font-weight: 600; }
     #print-boxes .lead { margin: 0 0 8px; }
-    #print-boxes .pbx { display: flex; gap: 34px; align-items: center; margin: .1em 0 .2em; }
+    #print-boxes .pbx { display: flex; gap: 28px; align-items: flex-start; margin: .1em 0 .2em; }
     #print-boxes .pg {                          /* the paper page (what comes out of the printer) */
       position: relative; flex: none; width: 440px; height: 248px; box-sizing: border-box;
       background: #e4e8ee; border-radius: 3px; box-shadow: 0 5px 18px rgba(20,30,50,.22);
@@ -103,40 +188,48 @@
     #print-boxes.noframe .pg { padding: 0; }                    /* the real default: no frame */
     #print-boxes .sb {                          /* your slide — the background and all ink live here */
       position: relative; width: 100%; height: 100%; box-sizing: border-box;
-      outline: 2px dashed #15803d; background: #eef5ff; padding: 26px; transition: padding .35s ease; }
+      outline: 2px dashed var(--c-slide); background: #eef5ff; padding: 26px; transition: padding .35s ease; }
     #print-boxes.nopad .sb { padding: 0; }                      /* text pushed to the slide edge */
     #print-boxes .cb {                          /* your text — a faux slide: title bar + lines */
       position: relative; width: 100%; height: 100%; box-sizing: border-box;
-      outline: 2px solid #2563eb; background: #fff;
+      outline: 2px solid var(--c-text); background: #fff;
       display: flex; flex-direction: column; justify-content: center; gap: 13px; padding: 18px 22px; }
     #print-boxes .cb i { display: block; border-radius: 3px; }
     #print-boxes .cb .t { height: 15px; width: 56%; background: var(--deck-navy); }
     #print-boxes .cb .l { height: 8px; background: #ccd3dd; }
     #print-boxes .cb .l.s { width: 74%; }
     #print-boxes .tag { position: absolute; font: 700 14px/1 var(--deck-font); z-index: 2; }  /* names a region */
-    #print-boxes .tag-pg { top: 9px; left: 12px; color: #6b7078; transition: opacity .35s ease; }
+    #print-boxes .tag-pg { top: 9px; left: 12px; color: var(--c-paper); transition: opacity .35s ease; }
     #print-boxes.noframe .tag-pg { opacity: 0; }                /* no frame → nothing to label */
-    #print-boxes .tag-sb { bottom: 9px; left: 12px; color: #15803d; }
-    #print-boxes .tag-cb { bottom: 9px; right: 12px; color: #2563eb; }
+    #print-boxes .tag-sb { bottom: 9px; left: 12px; color: var(--c-slide); }
+    #print-boxes .tag-cb { bottom: 9px; right: 12px; color: var(--c-text); }
     #print-boxes .gap {                         /* numbered badge straddling a boundary line */
       position: absolute; left: 50%; top: -12px; transform: translateX(-50%); z-index: 3;
       width: 24px; height: 24px; border-radius: 50%; color: #fff; border: 2px solid #fff;
       font: 700 13px/20px var(--deck-font); text-align: center; box-shadow: 0 1px 5px rgba(0,0,0,.3); }
-    #print-boxes .gap-1 { background: #6b7078; }                /* on the page → slide line */
-    #print-boxes .gap-2 { background: #2563eb; }                /* on the slide → text line */
-    /* right column: a titled block per space, plain language, readable size */
-    #print-boxes .pbx-exp { flex: 1; text-align: left; }
-    #print-boxes .gap-block { position: relative; border-left: 4px solid #6b7078; padding-left: 22px; margin: 0 0 12px; }
-    #print-boxes .gap-block.g2 { border-left-color: #2563eb; }
-    #print-boxes .gap-block .num {              /* sits on the accent bar, like the figure's badges on a line */
-      position: absolute; left: -13px; top: 1px; width: 24px; height: 24px; border-radius: 50%;
-      border: 2px solid #fff; color: #fff; font: 700 14px/22px var(--deck-font); text-align: center; }
-    #print-boxes .gap-block.g1 .num { background: #6b7078; }
-    #print-boxes .gap-block.g2 .num { background: #2563eb; }
-    #print-boxes .gap-block h4 { margin: 0 0 5px; color: var(--deck-navy); font-size: 18px; font-weight: 700; line-height: 1.2; }
-    #print-boxes .gap-block p { margin: 0 0 7px; color: #333; font-size: 16px; line-height: 1.4; }
-    #print-boxes .gap-block button { margin: 0; }
-    #print-boxes .pbx-note { margin: 4px 0 0; color: #5f6772; font-size: 16px; line-height: 1.45; }
+    #print-boxes .gap-1 { background: var(--c-paper); }         /* on the page → slide line */
+    #print-boxes .gap-2 { background: var(--c-text); }          /* on the slide → text line */
+    /* right column: one shadcn card per space; a full-width note sits below the
+       whole row. Each card carries a coloured number badge and a matching LEFT
+       accent bar tying it to its numbered gap in the diagram (paper grey =
+       page→slide, text blue = slide→text). Compacted — the deck's densest slide. */
+    #print-boxes .pbx-exp { flex: 1; text-align: left; display: flex; flex-direction: column; gap: 9px; }
+    #print-boxes .pbx-card { padding: .45em .7em; }
+    #print-boxes .pbx-card.g1 { border-left: 3px solid var(--c-paper); }
+    #print-boxes .pbx-card.g2 { border-left: 3px solid var(--c-text); }
+    #print-boxes .pbx-card .card-title { font-size: .8em; margin: 0 0 4px; line-height: 1.2; }
+    #print-boxes .pbx-num {                     /* the badge, coloured per gap, echoing the figure */
+      flex: none; width: 21px; height: 21px; border-radius: 50%; color: #fff;
+      font: 700 13px/21px var(--deck-font); text-align: center; }
+    #print-boxes .pbx-card.g1 .pbx-num { background: var(--c-paper); }
+    #print-boxes .pbx-card.g2 .pbx-num { background: var(--c-text); }
+    #print-boxes .pbx-card p { margin: 0 0 7px; color: #333; font-size: 16px; line-height: 1.38; }
+    #print-boxes .pbx-card button {             /* a compact secondary (shadcn "outline/soft") button */
+      margin: 0; font: 600 13px var(--deck-font); padding: .3em .8em; border-radius: 7px;
+      color: var(--deck-navy); background: #f6f8fa; border: 1px solid #d3d9e0; }
+    #print-boxes .pbx-card button:hover { background: var(--deck-navy); color: #fff; border-color: var(--deck-navy); }
+    /* the note now spans the full slide width, below the figure+cards row */
+    #print-boxes .pbx-note { margin: 10px 0 0; font-size: 16px; line-height: 1.45; color: #2b3444; }
     .reveal pre { box-shadow: none; width: 100%; font-size: .62em; }
     .reveal pre code { border-radius: 8px; padding: 14px 16px; }
     .reveal .math-display { font-size: 1.15em; margin: .3em 0; }
@@ -167,8 +260,31 @@
        the projector panes it drives. */
     .reveal .pal-slider { grid-column: 3; display: flex; align-items: center;
       gap: .5em; margin-top: 3px; font-size: .72em; color: #6b7480; }
-    .reveal .pal-slider input[type=range] { flex: 1; min-width: 0;
-      accent-color: var(--skku-orange); }
+    /* a custom range control (shadcn-style): a thin rounded track, an orange
+       fill, and a clean circular thumb with a soft shadow + focus ring. The
+       WebKit track has no native "progress" fill, so the filled portion is a
+       gradient sized by --pal-fill, set next to --pal-ambient in the handler. */
+    .reveal .pal-slider input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      flex: 1; min-width: 0; height: 16px; margin: 0; background: transparent; cursor: pointer; }
+    .reveal .pal-slider input[type=range]:focus { outline: none; }
+    .reveal .pal-slider input[type=range]::-webkit-slider-runnable-track {
+      height: 5px; border-radius: 999px;
+      background: linear-gradient(var(--skku-orange), var(--skku-orange)) 0/var(--pal-fill, 24%) 100% no-repeat, #e3e7ec; }
+    .reveal .pal-slider input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; margin-top: -6px;
+      width: 15px; height: 15px; border-radius: 50%; background: #fff;
+      border: 1px solid #cfd6de; box-shadow: 0 1px 3px rgba(20,30,50,.28);
+      transition: border-color .12s, box-shadow .12s; }
+    .reveal .pal-slider input[type=range]:hover::-webkit-slider-thumb { border-color: var(--skku-orange); }
+    .reveal .pal-slider input[type=range]:active::-webkit-slider-thumb,
+    .reveal .pal-slider input[type=range]:focus-visible::-webkit-slider-thumb {
+      border-color: var(--skku-orange); box-shadow: 0 0 0 4px rgba(255,108,15,.18), 0 1px 3px rgba(20,30,50,.28); }
+    .reveal .pal-slider input[type=range]::-moz-range-track { height: 5px; border-radius: 999px; background: #e3e7ec; }
+    .reveal .pal-slider input[type=range]::-moz-range-progress { height: 5px; border-radius: 999px; background: var(--skku-orange); }
+    .reveal .pal-slider input[type=range]::-moz-range-thumb {
+      width: 15px; height: 15px; border: 1px solid #cfd6de; border-radius: 50%;
+      background: #fff; box-shadow: 0 1px 3px rgba(20,30,50,.28); }
     .reveal .pal-slider #pal-room-val { font-weight: 700; color: #333;
       min-width: 2.6em; text-align: right; }
     /* footer master: date bottom-left, attribution + page number bottom-right
@@ -292,10 +408,13 @@
       <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>,
       and write right here.</p>
       <p class="demo-try">Try it now — scrawl a note, circle a word, underline this line.</p>
-      <p class="demo-hint">Colours and three pen widths in the bar ·
-      <kbd>E</kbd> eraser (per stroke, not clear-all) · <kbd>Ctrl+Z</kbd> undo ·
-      <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>X</kbd> clear this slide · <kbd>Esc</kbd> exit.<br/>
-      Ink lands exactly under the cursor at any window size or zoom — and it
+      <div class="card keys">
+        <p class="card-title">Keys on this slide</p>
+        <p class="demo-hint" style="margin:0">Colours and three pen widths in the bar ·
+        <kbd>E</kbd> eraser (per stroke, not clear-all) · <kbd>Ctrl+Z</kbd> undo ·
+        <kbd>Ctrl+Shift+Z</kbd> redo · <kbd>X</kbd> clear this slide · <kbd>Esc</kbd> exit.</p>
+      </div>
+      <p class="demo-hint">Ink lands exactly under the cursor at any window size or zoom — and it
       <strong>survives reloads, and even editing the deck later.</strong></p>
       <aside class="notes">Strokes are stored as ratios keyed to slide content, so they survive resize, reload, and deck edits.</aside>
     </section>
@@ -362,9 +481,9 @@
       <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M12 8v6"/><path d="M9 11h6"/></svg>
       drops a blank board into the deck — without leaving your talk.</p>
       <p class="demo-hint">Whiteboard or blackboard (the pen colour swaps to stay visible),
-      in the deck's own slide format. It's a <strong>real slide</strong>: it shows in the
-      overview, the speaker view, and the PDF export — and it's uncounted, so your
-      audience-visible slide numbers don't shift.</p>
+      in the deck's own slide format. It's a <strong>real slide</strong>.</p>
+      <div class="callout info">It shows in the overview, the speaker view, and the PDF
+      export — and it's uncounted, so your audience-visible slide numbers don't shift.</div>
       <aside class="notes">Great for an unplanned derivation or a question you didn't prepare for.</aside>
     </section>
 
@@ -386,14 +505,23 @@
     <!-- 10 · save / ship / print -->
     <section>
       <h2>Save it. Ship it. Print it.</h2>
-      <ul>
-        <li><strong>Portable copy</strong> — one self-contained HTML file with your ink
-          baked in as SVG and your text as real HTML. Opens anywhere, even without the
-          plugin — and re-absorbs into the editable model wherever the plugin loads.</li>
-        <li><strong>Clean copy</strong> — the shareable deck, annotations stripped.</li>
-        <li><strong>PDF export</strong> — one click; ink as crisp vector overlays, text as
-          selectable HTML, boards as real pages. Or export clean.</li>
-      </ul>
+      <div class="card-grid">
+        <div class="card">
+          <p class="card-title">Portable copy</p>
+          <p>One self-contained HTML file with your ink baked in as SVG and your text as
+          real HTML. Opens anywhere, even without the plugin — and re-absorbs into the
+          editable model wherever the plugin loads.</p>
+        </div>
+        <div class="card">
+          <p class="card-title">Clean copy</p>
+          <p>The shareable deck, annotations stripped.</p>
+        </div>
+        <div class="card">
+          <p class="card-title">PDF export</p>
+          <p>One click; ink as crisp vector overlays, text as selectable HTML, boards as
+          real pages. Or export clean.</p>
+        </div>
+      </div>
       <p class="demo-hint">All from the download / print button
       <svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg><svg class="ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>
       in the toolbar. Live ink lives in localStorage per deck; nothing leaves your machine
@@ -419,21 +547,25 @@
           </div>
         </div>
         <div class="pbx-exp">
-          <div class="gap-block g1">
-            <span class="num">1</span>
-            <h4>From paper border to slide is the frame</h4>
+          <div class="card pbx-card g1">
+            <p class="card-title"><span class="pbx-num">1</span> From paper border to slide is the frame</p>
             <p><b>Off by default</b> — the plugin leaves it at zero, so your slide fills the whole sheet. Add one with the plugin's <code>printMargin</code> setting.</p>
             <button onclick="pbxToggle(this,'noframe','Remove the frame','Add the frame back')">Remove the frame</button>
           </div>
-          <div class="gap-block g2">
-            <span class="num">2</span>
-            <h4>From slide border to text is the padding</h4>
+          <div class="card pbx-card g2">
+            <p class="card-title"><span class="pbx-num">2</span> From slide border to text is the padding</p>
             <p>The same gap you see on screen, <b>kept in the PDF</b> — so your printout looks like your slides.</p>
             <button onclick="pbxToggle(this,'nopad','Remove the padding','Add the padding back')">Remove the padding</button>
           </div>
-          <p class="pbx-note">To add a margin at print time, lower <b>Scale</b> below 100% in the print dialog — the slide shrinks and leaves one. Its <b>Margins</b> setting can't: the page is fixed to your slide's size.</p>
         </div>
       </div>
+      <div class="callout note pbx-note"><b>Want a white border around the printout?</b>
+      Set the plugin's <code>printMargin</code> — that's the frame above — or, at print time,
+      lower <b>Scale</b> below 100% in the browser's print dialog: the <span class="c-slide">slide</span>
+      shrinks on the <span class="c-paper">page</span> and the freed space becomes your margin.
+      The dialog's own <b>Margins</b> control can't help — reveal fixes each
+      <span class="c-paper">page</span> to your <span class="c-slide">slide</span>'s exact size,
+      so there's no spare paper for it to trim.</div>
       <aside class="notes">Plain version, no reveal.js assumed. Two spaces between paper and text: ① paper → slide is the outer frame, set by printMargin — none by default, so your slide fills the whole sheet; the frame shown is printMargin turned up, and "Remove the frame" shows the real default. ② slide → text is the padding your slides already have on screen; it's re-applied in the PDF so the printout looks like the screen. Anything you draw or type is anchored to the slide, so it prints in place no matter the frame. printMargin is a plugin option — Reveal.initialize({ autohideToolbar: { printMargin: 0.05 } }), and it defaults to 0. To change the outer margin: set that option, or lower Scale below 100% in the print dialog (the slide shrinks, leaving a border). The dialog's Margins control does nothing — reveal fixes the page size to your slide.</aside>
     </section>
 
@@ -539,7 +671,7 @@
         });
       </code></pre>
       <p class="demo-hint"><a href="https://github.com/frankhuettner/reveal.js-autohide-toolbar">github.com/frankhuettner/reveal.js-autohide-toolbar</a>
-      · MIT · links on the previous slide.<br/>
+      · <span class="badge green">MIT</span> · links on the previous slide.<br/>
       This deck is the plugin's own test subject — it runs in CI on Chromium &amp; WebKit × reveal 5 &amp; 6.</p>
       <aside class="notes">The whole toolkit is one file, no build step, no separate CSS.</aside>
     </section>
@@ -649,6 +781,7 @@
       const v = +slider.value;
       readout.textContent = v + '%';
       grid.style.setProperty('--pal-ambient', v / 100);  // only .proj panes read it
+      slider.style.setProperty('--pal-fill', (v / (+slider.max || 50)) * 100 + '%');  // WebKit track fill
     };
     slider.addEventListener('input', sync);
     sync();
