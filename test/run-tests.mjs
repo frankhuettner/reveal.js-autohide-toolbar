@@ -255,13 +255,13 @@ async function runSuite(browserType, label) {
     });
     await test('next/prev buttons navigate and update counter', async () => {
       await wake(page);
-      await page.locator('#aht-toolbar .aht-btn[title^="Next"]').click();
+      await page.locator('#aht-toolbar .aht-btn[aria-label^="Next"]').click();
       await page.waitForTimeout(600);
       assert((await indices(page)).h === 1, 'next did not advance');
       const no = await page.locator('#aht-slideno').textContent();
       const total = await page.evaluate(() => window.Reveal.getTotalSlides());
       assert(no === `2 / ${total}`, 'counter after next: ' + no);
-      await page.locator('#aht-toolbar .aht-btn[title^="Previous"]').click();
+      await page.locator('#aht-toolbar .aht-btn[aria-label^="Previous"]').click();
       await page.waitForTimeout(600);
       assert((await indices(page)).h === 0, 'prev did not go back');
     });
@@ -293,7 +293,7 @@ async function runSuite(browserType, label) {
         'cluster did not disappear again after leaving the stack');
     });
     await test('overview button toggles overview and hides canvas', async () => {
-      await page.locator('#aht-toolbar .aht-btn[title^="Slide overview"]').click();
+      await page.locator('#aht-toolbar .aht-btn[aria-label^="Slide overview"]').click();
       await page.waitForTimeout(500);
       assert(await page.evaluate(() => window.Reveal.isOverview()), 'overview not on');
       assert(await page.evaluate(() => document.getElementById('aht-canvas').style.display === 'none'), 'canvas not hidden in overview');
@@ -305,7 +305,7 @@ async function runSuite(browserType, label) {
       await wake(page);
       const [popup] = await Promise.all([
         ctx.waitForEvent('page', { timeout: 8000 }),
-        page.locator('#aht-toolbar .aht-btn[title^="Speaker view"]').click(),
+        page.locator('#aht-toolbar .aht-btn[aria-label^="Speaker view"]').click(),
       ]);
       await popup.close();
     });
@@ -419,7 +419,7 @@ async function runSuite(browserType, label) {
       await page.waitForTimeout(500);
       const barBox = await page.locator('#aht-bar').boundingBox();
       assert(barBox.x >= 0 && barBox.x + barBox.width <= 360 + 1, 'bar overflows narrow viewport: ' + JSON.stringify(barBox));
-      const closeBox = await page.locator('#aht-bar button[title*="Exit"]').boundingBox();
+      const closeBox = await page.locator('#aht-bar button[aria-label*="Exit"]').boundingBox();
       assert(closeBox && closeBox.x >= 0 && closeBox.x + closeBox.width <= 360 + 1, 'close button not reachable: ' + JSON.stringify(closeBox));
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.waitForTimeout(500);

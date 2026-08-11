@@ -293,6 +293,37 @@ body.aht-chrome #aht-toolbar { opacity: 1; pointer-events: auto; transform: none
 .aht-updown .aht-btn svg { width: 12px; height: 12px; }
 #aht-slideno { color: #aeb8cc; font: 600 12px/1 var(--aht-font, 'Open Sans', system-ui, sans-serif); padding: 0 6px 0 4px; white-space: nowrap; user-select: none; }
 
+/* ---------- tooltips ----------
+   a small pill above the control, in the toolbar's own palette — replaces the
+   browser's slow, mismatched native title (controls carry data-tip + aria-label
+   via setTip(), never title). Shown on hover/focus after a short delay so a quick
+   sweep across the bar doesn't leave a trail; pointer-events:none so it can never
+   swallow a click. The toolbar sits at the bottom edge, so the pill points down.
+   Scoped to the plugin's own containers so a host page's data-tip is left alone. */
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip] { position: relative; }
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]::after,
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]::before {
+  position: absolute; left: 50%; bottom: 100%; opacity: 0; pointer-events: none; z-index: 5;
+  transition: opacity .12s ease, transform .12s ease;
+}
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]::after {
+  content: attr(data-tip); margin-bottom: 9px; transform: translate(-50%, 4px);
+  padding: 4px 8px; border-radius: 6px; white-space: nowrap;
+  background: #0e1a30; color: #eaf0fb; border: 1px solid rgba(255,255,255,.09);
+  box-shadow: 0 4px 14px rgba(0,0,0,.45); letter-spacing: .01em;
+  font: 600 11px/1.2 var(--aht-font, 'Open Sans', system-ui, sans-serif);
+}
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]::before {   /* pointer under the pill */
+  content: ''; margin-bottom: 4px; transform: translate(-50%, 4px);
+  border: 5px solid transparent; border-top-color: #0e1a30;
+}
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]:hover::after,
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]:hover::before,
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]:focus-visible::after,
+:is(#aht-toolbar, #aht-bar, #aht-text-layer) [data-tip]:focus-visible::before {
+  opacity: 1; transform: translate(-50%, 0); transition-delay: .35s;
+}
+
 #aht-bar {
   position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: calc(var(--aht-z, 30) + 30);
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
@@ -1008,9 +1039,22 @@ body.aht-noselect .aht-text-edit, body.aht-noselect .aht-text-edit * {
   // ---------- DOM + icons ----------
   function el(tag, attrs, html) {
     const n = document.createElement(tag);
-    if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (attrs) for (const k in attrs) {
+      if (k === 'title') { setTip(n, attrs[k]); continue; }   // custom tooltip, not the OS one
+      n.setAttribute(k, attrs[k]);
+    }
     if (html != null) n.innerHTML = html;
     return n;
+  }
+  // Give a control a styled tooltip (the [data-tip] pill in the CSS) rather than
+  // the browser's native title — which appears after a long delay and can't be
+  // matched to the dark toolbar. data-tip drives the pill; aria-label keeps the
+  // icon-only button's accessible name. We deliberately do NOT set title, or the
+  // OS would render a second tooltip on top of ours.
+  function setTip(n, text) {
+    if (text == null || text === '') { delete n.dataset.tip; n.removeAttribute('aria-label'); return; }
+    n.dataset.tip = text;
+    n.setAttribute('aria-label', text);
   }
   const sep = () => el('span', { class: 'aht-sep' });
   const S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
@@ -1241,7 +1285,7 @@ body.aht-noselect .aht-text-edit, body.aht-noselect .aht-text-edit * {
     const min = !!(barPos && barPos.min);
     bar.classList.toggle('min', min);
     const mb = bar.querySelector('#aht-minbtn');
-    if (mb) { mb.innerHTML = min ? ICONS.chevUp : ICONS.chevDown; mb.title = min ? 'Restore toolbar' : 'Minimize toolbar'; }
+    if (mb) { mb.innerHTML = min ? ICONS.chevUp : ICONS.chevDown; setTip(mb, min ? 'Restore toolbar' : 'Minimize toolbar'); }
     if (barPos && typeof barPos.x === 'number') {
       const x = Math.min(Math.max(barPos.x, 4), window.innerWidth - bar.offsetWidth - 4);
       const y = Math.min(Math.max(barPos.y, 4), window.innerHeight - bar.offsetHeight - 4);
@@ -1299,7 +1343,7 @@ body.aht-noselect .aht-text-edit, body.aht-noselect .aht-text-edit * {
       bb.dataset.mode = mode;
       bb.classList.toggle('active', isB);
       bb.innerHTML = isB ? ICONS.boardOff : ICONS.board;
-      bb.title = isB ? 'Remove this board slide' : 'Insert board slide';
+      setTip(bb, isB ? 'Remove this board slide' : 'Insert board slide');
     }
     const sb = bar.querySelector('#aht-surface');
     if (sb) sb.hidden = !isB;
