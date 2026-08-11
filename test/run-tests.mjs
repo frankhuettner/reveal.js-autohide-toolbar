@@ -586,7 +586,15 @@ async function runSuite(browserType, label) {
       await p2.waitForTimeout(1500);
       const t = await p2.evaluate(() => [!!document.getElementById('aht-canvas'), !!document.getElementById('aht-toolbar')]);
       assert(!t[0] && !t[1], 'plugin active in scroll view: ' + JSON.stringify(t));
-      assert(errs.length === 0, errs.join(' | '));
+      // A third-party CDN asset that fails to load (e.g. the Caveat web font from
+      // Google Fonts) is not the plugin's bug — the deck tests below apply the same
+      // policy. Every sub-resource of this demo is a CDN URL, so such a failure and
+      // its generic "Failed to load resource" console line are always external;
+      // real plugin/page errors surface as a pageerror or a console line with content.
+      const fatal = errs.filter((e) =>
+        !/^reqfail: https?:\/\/(?!127\.0\.0\.1)/.test(e) &&
+        !/^console: Failed to load resource/i.test(e));
+      assert(fatal.length === 0, fatal.join(' | '));
       await p2.close();
       CURPAGE = page;
     });
@@ -951,7 +959,7 @@ async function runSuite(browserType, label) {
       assert(/<path[^>]+data-aht-a/i.test(html) || /<circle[^>]+data-aht-a/i.test(html), 'baked ink path/circle missing');
       assert(/viewBox=/.test(html) && /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(html), 'baked SVG missing root attrs');
       assert(!/<script[^>]+data-aht-annotations/i.test(html), 'portable copy should not carry a JSON annotations block');
-      assert(html.includes('fresh, familiar toolbar'), 'deck source content missing from the copy');
+      assert(html.includes('github.com/frankhuettner/reveal.js-autohide-toolbar'), 'deck source content missing from the copy');
       assert(!html.includes('id="aht-toolbar"'), 'live plugin DOM leaked into the copy');
       // self-contained: the plugin source is inlined, no relative script left
       assert(html.includes('window.RevealAutohideToolbar'), 'plugin source not inlined into the copy');
