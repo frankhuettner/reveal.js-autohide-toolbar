@@ -17,7 +17,8 @@
   ],
   "scripts": {
     "demo": "python3 -m http.server 8020 --bind 127.0.0.1",
-    "test": "node test/run-tests.mjs"
+    "test": "node test/run-tests.mjs",
+    "add-aht": "node tools/add-aht-to-slides-export.mjs"
   },
   "keywords": [
     "reveal.js",
