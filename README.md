@@ -8,16 +8,34 @@ from a toolbar that hides until you reach for it.
 draw on a slide, highlight a line, type a note, insert a board, and save a
 portable copy, all in your browser.
 
-The demo ships in two shapes, one source of truth:
+The demo ships in two shapes, one source of truth — and the split one doubles as
+a starting template:
 
-- **`demo/index.html`** — the **split** version, laid out the way a real project
-  is: it links `../letterbox.css` and loads the plugin from
-  `../reveal-autohide-toolbar.js`. Edit this one.
-- **`demo/standalone.html`** — the **all-in-one** version: the stylesheet and
-  the plugin are inlined so the single file runs anywhere you drop it (shared
-  libraries still load from a CDN). It's **generated** from the split demo by
-  `npm run build:standalone` — don't edit it by hand. `npm run build:standalone
-  -- --check` verifies it's in step (handy in CI).
+- **`demo/index.html`** — the **split** version, laid out like a real project: it
+  links `../letterbox.css` and loads the plugin from `../reveal-autohide-toolbar.js`.
+  **Start here** — copy it, edit your slides, keep your own CSS/JS as separate files.
+- **`demo/standalone.html`** — the **all-in-one** version: every local stylesheet
+  and script is inlined so the single file runs anywhere you drop it (CDN
+  resources still load remotely). It's **generated** — don't edit it by hand.
+
+When you're ready to share, export your own deck to one self-contained file the
+same way the demo is built:
+
+```sh
+node tools/build-standalone-demo.mjs my-talk.html          # → my-talk.standalone.html
+node tools/build-standalone-demo.mjs my-talk.html --out dist/index.html
+```
+
+It inlines every **local** `<link rel=stylesheet>` and `<script src>` (resolved
+relative to the deck) and leaves remote/CDN URLs untouched. Run with no arguments
+to rebuild this repo's demo (`npm run build:standalone`); add `--check` to verify
+an export is in step without rewriting it (used by CI).
+
+Note the division of labour with the toolbar's own download menu: this tool
+bundles your deck's *assets* before you present; the toolbar's **Save a copy**
+bundles your *annotations* after (it inlines only the plugin, not your local
+CSS/JS — see [Saving, sharing & PDF export](#saving-sharing--pdf-export)). So
+export first, present from the exported file, and a saved copy travels whole.
 
 A presenter toolkit for [reveal.js](https://revealjs.com), in one dependency-free
 file: **ink & text annotation** over your slides plus a **Slidev-style
