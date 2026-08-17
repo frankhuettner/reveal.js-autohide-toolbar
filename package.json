@@ -13,11 +13,13 @@
   },
   "files": [
     "reveal-autohide-toolbar.js",
-    "reveal-autohide-toolbar.mjs"
+    "reveal-autohide-toolbar.mjs",
+    "letterbox.css"
   ],
   "scripts": {
     "demo": "python3 -m http.server 8020 --bind 127.0.0.1",
     "test": "node test/run-tests.mjs",
+    "build:standalone": "node tools/build-standalone-demo.mjs",
     "add-aht": "node tools/add-aht-to-slides-export.mjs"
   },
   "keywords": [

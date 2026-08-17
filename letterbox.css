@@ -1,0 +1,66 @@
+/* letterbox.css v2 — includes the overview fix; changelog in README.
+
+   PPT-style letterbox (pure CSS theming, not the plugin): black bars,
+   white slide box. reveal itself never shows a letterbox — it paints the
+   theme/slide background across the whole viewport. Everything is scoped
+   to html:not(.print-pdf): reveal's print view copies the viewport's
+   COMPUTED background onto every PDF page, so an unscoped black viewport
+   would print black pages.
+
+   Opt-in: link this AFTER your reveal theme stylesheet. Assumes the deck is
+   configured with margin: 0 and a fixed width/height (e.g. 960×540); pair
+   with transition: 'fade' so nothing slides across the bars.
+
+   Parameters (override on :root or a scope):
+     --letterbox-bar-color   bar colour            (default #000)
+     --letterbox-ratio-w     aspect-ratio width    (default 16)
+     --letterbox-ratio-h     aspect-ratio height   (default  9)
+   For a 4:3 deck: --letterbox-ratio-w: 4; --letterbox-ratio-h: 3;
+
+   :has() dependency: the transparent-backdrop rule uses :has() (Safari 15.4+
+   / modern browsers). Degradation without it is harmless — data-background
+   slides just show the white stage behind their transparent areas. */
+
+:root {
+  --letterbox-bar-color: #000;
+  --letterbox-ratio-w: 16;
+  --letterbox-ratio-h: 9;
+}
+
+@media screen {
+  html:not(.print-pdf) .reveal-viewport { background: var(--letterbox-bar-color); }
+  html:not(.print-pdf) .reveal .slides { background: var(--r-background-color, #fff); }
+  /* clip the slide box so nothing spills onto the bars. With transition:'fade'
+     nothing moves, but this keeps any moving transition (or overfull content)
+     inside the frame. :not(.overview) so reveal's slide-sorter grid — which
+     lays slides out well beyond one box — isn't cropped to a single tile. */
+  html:not(.print-pdf) .reveal:not(.overview) .slides { overflow: hidden; }
+  /* keep data-background slides (colour/gradient/image/video) inside the
+     same box — reveal would paint them across the whole viewport.
+     Assumes the fixed-aspect + margin:0 config below. */
+  html:not(.print-pdf) .reveal > .backgrounds {
+    width: min(100vw, calc(100vh * var(--letterbox-ratio-w) / var(--letterbox-ratio-h)));
+    height: min(100vh, calc(100vw * var(--letterbox-ratio-h) / var(--letterbox-ratio-w)));
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+  }
+  /* ...and let them show through the slide-box backdrop */
+  .reveal:has(section.present[data-background], section.present[data-background-color],
+              section.present[data-background-gradient], section.present[data-background-image],
+              section.present[data-background-video], section.present[data-background-iframe])
+    .slides { background: transparent; }
+  /* Overview (press O) spreads every slide across the viewport, so the
+     single-centred-slide rules above no longer hold: the black bars fill
+     the screen and the slides' dark text vanishes into them. Restore
+     full-size backgrounds so reveal can seat a tile behind each slide, and
+     paint those tiles the slide colour — a dark slide-sorter with white
+     slides. A data-background-color/gradient slide keeps its own colour
+     (reveal sets it inline on the tile); :not(.stack) skips the
+     vertical-stack parent tile so it doesn't paint over the column. */
+  html:not(.print-pdf) .reveal.overview > .backgrounds {
+    width: 100%; height: 100%; top: 0; left: 0; transform: none;
+  }
+  html:not(.print-pdf) .reveal.overview .slides { background: transparent; }
+  html:not(.print-pdf) .reveal.overview .slide-background:not(.stack) {
+    background-color: var(--r-background-color, #fff);
+  }
+}

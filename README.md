@@ -8,6 +8,17 @@ from a toolbar that hides until you reach for it.
 draw on a slide, highlight a line, type a note, insert a board, and save a
 portable copy, all in your browser.
 
+The demo ships in two shapes, one source of truth:
+
+- **`demo/index.html`** — the **split** version, laid out the way a real project
+  is: it links `../letterbox.css` and loads the plugin from
+  `../reveal-autohide-toolbar.js`. Edit this one.
+- **`demo/standalone.html`** — the **all-in-one** version: the stylesheet and
+  the plugin are inlined so the single file runs anywhere you drop it (shared
+  libraries still load from a CDN). It's **generated** from the split demo by
+  `npm run build:standalone` — don't edit it by hand. `npm run build:standalone
+  -- --check` verifies it's in step (handy in CI).
+
 A presenter toolkit for [reveal.js](https://revealjs.com), in one dependency-free
 file: **ink & text annotation** over your slides plus a **Slidev-style
 auto-hiding toolbar** with everything you need when you present.
@@ -132,57 +143,11 @@ px-based font sizes.
 **Theming.** PowerPoint, Keynote and Google Slides paint black bars when the
 screen's aspect ratio doesn't match the slide's. reveal never shows a
 letterbox — it paints the theme / slide background across the whole viewport.
-If your audience expects the PPT look, plain CSS restores it:
-
-```css
-@media screen {
-  html:not(.print-pdf) .reveal-viewport { background: #000; }         /* the bars */
-  html:not(.print-pdf) .reveal .slides {                              /* the slide */
-    background: var(--r-background-color, #fff);
-  }
-  /* keep data-background slides (colour/gradient/image/video) inside the same
-     box — reveal would paint them across the whole viewport. Assumes the
-     16:9 + margin:0 config above; drop this rule if you prefer full-bleed. */
-  html:not(.print-pdf) .reveal > .backgrounds {
-    width: min(100vw, calc(100vh * 16 / 9));
-    height: min(100vh, calc(100vw * 9 / 16));
-    top: 50%; left: 50%; transform: translate(-50%, -50%);
-  }
-  /* ...and let them show through the slide-box backdrop */
-  .reveal:has(section.present[data-background], section.present[data-background-color],
-              section.present[data-background-gradient], section.present[data-background-image],
-              section.present[data-background-video], section.present[data-background-iframe])
-    .slides { background: transparent; }
-  /* Overview (O) spreads every slide across the viewport, so the rules above —
-     which assume one centred slide — leave the bars filling the screen and the
-     slides' text lost in the black. Give reveal back full-size backgrounds and
-     paint a tile behind each slide: a dark slide-sorter with white slides
-     (the tile colour follows --r-background-color, so it tracks a dark theme).
-     A data-background-*color*/gradient slide keeps its own colour (reveal sets
-     it inline on the tile); :not(.stack) skips the vertical-stack parent tile. */
-  html:not(.print-pdf) .reveal.overview > .backgrounds {
-    width: 100%; height: 100%; top: 0; left: 0; transform: none;
-  }
-  html:not(.print-pdf) .reveal.overview .slides { background: transparent; }
-  html:not(.print-pdf) .reveal.overview .slide-background:not(.stack) {
-    background-color: var(--r-background-color, #fff);
-  }
-}
-```
-
-Three details worth knowing. reveal deliberately paints a slide's
-`data-background` across the *entire viewport*, not just the slide box — the
-`.backgrounds` rule reins that in so background slides respect the bars like
-everything else (delete it to get reveal's full-bleed behaviour back, e.g.
-for video walls). The `html:not(.print-pdf)` scope is not cosmetic:
-reveal's print view copies the viewport's *computed* background onto every
-PDF page, so an unscoped black viewport would print black pages. And the
-`.overview` block keeps the slide overview (`O`) legible — the bars would
-otherwise fill it and swallow the slides' dark text; instead it restores
-reveal's per-slide backgrounds so the overview reads as a dark slide-sorter
-with white slides. (For the
-plugin's own colours — accent, toolbar, board surface — see
-[Theming](#theming) below.)
+If your audience expects the PPT look, drop in the opt-in `letterbox.css`
+shipped in this repo (linked after your theme stylesheet) — see
+[Letterbox (optional)](#letterbox-optional) for how to include it, the
+parameters, and the caveats. (For the plugin's own colours — accent, toolbar,
+board surface — see [Theming](#theming) below.)
 
 **Plugin.** Nothing above needs this plugin — it adds behaviour only, and
 adapts to whatever geometry and theme you pick. Ink is stored relative to the
@@ -389,6 +354,63 @@ CSS custom properties, set on `:root` in your deck (values shown are the default
   --aht-z: 30;                         /* base z-index */
 }
 ```
+
+## Letterbox (optional)
+
+`letterbox.css` is a small, opt-in stylesheet (independent of the plugin — pure
+CSS theming) that gives your deck a **PowerPoint-style bounded slide**: a fixed
+16:9 white slide box centred in the window with bars filling the rest. reveal
+itself never paints a letterbox — it stretches the theme/slide background across
+the whole viewport — so this stylesheet reins it back into a fixed frame.
+
+**Include it after your theme stylesheet:**
+
+```html
+<link rel="stylesheet" href="reveal.js/dist/theme/white.css" />
+<link rel="stylesheet" href="letterbox.css" />
+```
+
+**Assumptions.** It expects the deck to be configured edge-to-edge with a fixed
+aspect ratio — `margin: 0` and a matching `width`/`height`:
+
+```js
+Reveal.initialize({ width: 960, height: 540, margin: 0, transition: 'fade' });
+```
+
+`transition: 'fade'` is recommended: the slide box is a fixed frame, so a moving
+transition would slide the outgoing/incoming slide across the bars. A fade
+dissolves in place.
+
+**Parameters** (override on `:root` or a scope; defaults shown):
+
+```css
+:root {
+  --letterbox-bar-color: #000;   /* bar colour */
+  --letterbox-ratio-w: 16;       /* aspect-ratio width  */
+  --letterbox-ratio-h: 9;        /* aspect-ratio height */
+}
+```
+
+For a 4:3 deck, set `--letterbox-ratio-w: 4; --letterbox-ratio-h: 3;` (and the
+matching `width`/`height` in your reveal config).
+
+**Caveats** (both are load-bearing, and both are why the stylesheet is versioned
+— `v2` includes the overview fix; diff downstream copies against it rather than
+letting an inlined copy go stale):
+
+- **Everything stays scoped to `html:not(.print-pdf)`.** reveal's PDF export
+  copies the viewport's *computed* background onto every page, so an unscoped
+  black viewport would print solid-black PDF pages. Don't remove the scope.
+- **The three `.reveal.overview` rules are load-bearing.** In the overview
+  (slide sorter, press `O`) reveal spreads every slide across the viewport, so
+  the single-centred-slide rules no longer hold — without these three rules the
+  sorter shows dark slide text directly on the black bars. They restore
+  full-size backgrounds and paint each tile the slide colour.
+
+**Browser support.** The transparent-backdrop rule for `data-background` slides
+uses `:has()` (Safari 15.4+ / modern browsers). Degradation without it is
+harmless — such slides simply show the white stage behind their transparent
+areas.
 
 ## Testing
 

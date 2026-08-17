@@ -7,6 +7,17 @@ on:
   pull_request:
   workflow_dispatch:
 jobs:
+  # Fast guard: demo/standalone.html is generated from demo/index.html +
+  # letterbox.css + the plugin. Fail if it wasn't rebuilt after an edit.
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run build:standalone -- --check
+
   test:
     runs-on: ubuntu-latest
     steps:
